@@ -13,7 +13,6 @@ import (
 	"math/rand"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/llgcode/draw2d"
 	"github.com/llgcode/draw2d/draw2dimg"
@@ -35,10 +34,6 @@ type ComicGen struct {
 	fontData  *draw2d.FontData
 }
 
-func init() {
-	draw2d.SetFontFolder(".")
-}
-
 // NewComicGen creates a new comic generator.
 func NewComicGen() (*ComicGen, error) {
 	var avatarFiles []os.FileInfo
@@ -58,6 +53,8 @@ func NewComicGen() (*ComicGen, error) {
 			}
 		}
 	}
+
+	draw2d.SetFontFolder("fonts")
 
 	return &ComicGen{
 		avatars: avatars,
@@ -594,10 +591,4 @@ func (c *oneSpeakerMonologueCellRenderer) render(gc *draw2dimg.GraphicContext, a
 	drawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX-arrowHeight*2, bY+rand.Float64()*float64(bounds.Dy()))
 	drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[1].Text), arrowHeight, bX, bY, bWidth, bHeight)
 
-}
-
-func init() {
-	draw2d.SetFontFolder("fonts")
-
-	rand.Seed(time.Now().UnixNano())
 }
