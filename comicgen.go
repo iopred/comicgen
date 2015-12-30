@@ -7,9 +7,11 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	_ "image/jpeg" // For JPEG decoding
 	"io/ioutil"
 	"math"
 	"math/rand"
+	"net/http"
 	"os"
 	"strings"
 
@@ -76,6 +78,7 @@ type Message struct {
 // Script contains all the data necessary to generate a comic.
 type Script struct {
 	Messages []*Message
+	Avatars  map[int]string
 	Author   string
 }
 
@@ -135,14 +138,38 @@ func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 	gc.SetFontData(*comic.fontData)
 	gc.SetFont(draw2d.GetFont(gc.GetFontData()))
 
+	avatars := append([]image.Image{}, comic.avatars...)
+	for i, url := range script.Avatars {
+		image, err := fetchAvatar(url)
+		if err == nil {
+			avatars[i] = image
+		}
+	}
+
 	for i, c := 0, 0; i < len(plan); i++ {
 		renderer := plan[i]
-		renderer.render(gc, comic.avatars, messages[c:c+renderer.lines()], 5+240*float64(i), 5, 220, 200)
+		renderer.render(gc, avatars, messages[c:c+renderer.lines()], 5+240*float64(i), 5, 220, 200)
 		c += renderer.lines()
 	}
 	drawTextInRect(gc, color.RGBA{0xdd, 0xdd, 0xdd, 0xff}, textAlignRight, 1, fmt.Sprintf("A comic by %v.", script.Author), 3, 0, 205, float64(width), 20)
 
 	return rgba, nil
+}
+
+func fetchAvatar(url string) (image.Image, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+
+	image, _, err := image.Decode(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return image, nil
 }
 
 func countSpeakers(messages []*Message) int {
@@ -403,6 +430,26 @@ func insetRectangleLRTB(x, y, width, height, left, right, top, bottom float64) (
 	return x + left, y + top, width - left - right, height - top - bottom
 }
 
+func rect(gc *draw2dimg.GraphicContext, x, y, width, height float64) {
+	gc.MoveTo(x, y)
+	gc.LineTo(x+width, y)
+	gc.LineTo(x+width, y+height)
+	gc.LineTo(x, y+height)
+	gc.LineTo(x, y)
+}
+
+func outline(gc *draw2dimg.GraphicContext, x, y, width, height float64) {
+	gc.Save()
+	color := color.RGBA{0x00, 0x00, 0x00, 0x22}
+	gc.SetLineCap(draw2d.RoundCap)
+	gc.SetLineJoin(draw2d.RoundJoin)
+	gc.SetLineWidth(2)
+	gc.SetStrokeColor(color)
+	rect(gc, x, y, width, height)
+	gc.Stroke()
+	gc.Restore()
+}
+
 type cellRenderer interface {
 	// Returns the maximum number of lines this renderer can satisfy.
 	lines() int
@@ -410,22 +457,6 @@ type cellRenderer interface {
 	// If this returns 0, this renderer cannot satisfy any lines and is unusable.
 	satisfies(messages []*Message) int
 	render(gc *draw2dimg.GraphicContext, avatars []image.Image, messages []*Message, x, y, width, height float64)
-}
-
-func outline(gc *draw2dimg.GraphicContext, x, y, width, height float64) {
-	gc.Save()
-	color := color.RGBA{0xdd, 0xdd, 0xdd, 0xff}
-	gc.SetLineCap(draw2d.RoundCap)
-	gc.SetLineJoin(draw2d.RoundJoin)
-	gc.SetLineWidth(2)
-	gc.SetStrokeColor(color)
-	gc.MoveTo(x, y)
-	gc.LineTo(x+width, y)
-	gc.LineTo(x+width, y+height)
-	gc.LineTo(x, y+height)
-	gc.LineTo(x, y)
-	gc.Stroke()
-	gc.Restore()
 }
 
 type oneSpeakerCellRenderer struct{}
@@ -449,12 +480,14 @@ func (c *oneSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars []
 	}
 
 	border := float64(5)
+	bounds := image.Rectangle{image.Point{0, 0}, image.Point{88, 88}}
 
 	avatar := avatars[messages[0].Speaker]
-	bounds := avatar.Bounds()
-	gc.SetMatrixTransform(draw2d.NewTranslationMatrix(x+border, y+height-border-float64(bounds.Dy())))
-	gc.DrawImage(avatar)
-	gc.SetMatrixTransform(draw2d.NewIdentityMatrix())
+
+	gc.Save()
+	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x+border, y+height-border-float64(bounds.Dy())))
+	drawAvatar(gc, avatar, bounds)
+	gc.Restore()
 
 	bX, bY, bWidth, bHeight := insetRectangleLRTB(x, y, width, height, border, border, border, border+float64(bounds.Dy())+arrowHeight*2)
 
@@ -483,12 +516,14 @@ func (c *flippedOneSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, ava
 	}
 
 	border := float64(5)
+	bounds := image.Rectangle{image.Point{0, 0}, image.Point{88, 88}}
 
 	avatar := avatars[messages[0].Speaker]
-	bounds := avatar.Bounds()
-	gc.SetMatrixTransform(draw2d.NewTranslationMatrix(x+border, y+border))
-	gc.DrawImage(avatar)
-	gc.SetMatrixTransform(draw2d.NewIdentityMatrix())
+
+	gc.Save()
+	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x+border, y+border))
+	drawAvatar(gc, avatar, bounds)
+	gc.Restore()
 
 	bX, bY, bWidth, bHeight := insetRectangleLRTB(x, y, width, height, border, border, border+float64(bounds.Dy())+arrowHeight*2, border)
 
@@ -517,21 +552,22 @@ func (c *twoSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars []
 	}
 
 	border := float64(5)
+	bounds := image.Rectangle{image.Point{0, 0}, image.Point{88, 88}}
 	flipped := rand.Float64() >= 0.5
 	// get a rectangle for half the area
 	aX, aY, aWidth, aHeight := insetRectangleLRTB(x, y, width, height, 0, 0, 0, height/2)
 	for i := 0; i < 2; i++ {
 
 		avatar := avatars[messages[i].Speaker]
-		bounds := avatar.Bounds()
 
+		gc.Save()
 		if flipped {
-			gc.SetMatrixTransform(draw2d.NewTranslationMatrix(aX+aWidth-border-float64(bounds.Dx()), aY+aHeight-border-float64(bounds.Dy())))
+			gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(aX+aWidth-border-float64(bounds.Dx()), aY+aHeight-border-float64(bounds.Dy())))
 		} else {
-			gc.SetMatrixTransform(draw2d.NewTranslationMatrix(aX+border, aY+border))
+			gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(aX+border, aY+border))
 		}
-		gc.DrawImage(avatar)
-		gc.SetMatrixTransform(draw2d.NewIdentityMatrix())
+		drawAvatar(gc, avatar, bounds)
+		gc.Restore()
 
 		bX, bY, bWidth, bHeight := insetRectangleLRTB(aX, aY, aWidth, aHeight, border, border+float64(bounds.Dx())+arrowHeight*3, border, border)
 
@@ -573,12 +609,14 @@ func (c *oneSpeakerMonologueCellRenderer) render(gc *draw2dimg.GraphicContext, a
 	}
 
 	border := float64(5)
+	bounds := image.Rectangle{image.Point{0, 0}, image.Point{88, 88}}
 
 	avatar := avatars[messages[0].Speaker]
-	bounds := avatar.Bounds()
-	gc.SetMatrixTransform(draw2d.NewTranslationMatrix(x+border, y+height-border-float64(bounds.Dy())))
-	gc.DrawImage(avatar)
-	gc.SetMatrixTransform(draw2d.NewIdentityMatrix())
+
+	gc.Save()
+	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x+border, y+height-border-float64(bounds.Dy())))
+	drawAvatar(gc, avatar, bounds)
+	gc.Restore()
 
 	bX, bY, bWidth, bHeight := insetRectangleLRTB(x, y, width, height, border, border, border, border+float64(bounds.Dy())+arrowHeight*2)
 
@@ -590,4 +628,14 @@ func (c *oneSpeakerMonologueCellRenderer) render(gc *draw2dimg.GraphicContext, a
 	drawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX-arrowHeight*2, bY+rand.Float64()*float64(bounds.Dy()))
 	drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[1].Text), arrowHeight, bX, bY, bWidth, bHeight)
 
+}
+
+func drawAvatar(gc *draw2dimg.GraphicContext, image image.Image, bounds image.Rectangle) {
+	ib := image.Bounds()
+	gc.Save()
+	gc.ComposeMatrixTransform(draw2d.NewScaleMatrix(float64(bounds.Dx())/float64(ib.Dx()), float64(bounds.Dy())/float64(ib.Dy())))
+	gc.DrawImage(image)
+	gc.Restore()
+
+	outline(gc, 0, 0, float64(bounds.Dx()), float64(bounds.Dy()))
 }
