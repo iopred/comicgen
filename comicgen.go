@@ -83,7 +83,7 @@ type Script struct {
 const maxComicLength = 3
 
 // MaxLines returns the maximum lines a comic can use.
-func (comic *ComicGen) Maxlines() int {
+func (comic *ComicGen) MaxLines() int {
 	// Determine the longest script possible
 	maxLines := 0
 	for _, renderer := range comic.renderers {
@@ -103,7 +103,7 @@ func (comic *ComicGen) Avatars() int {
 func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 	messages := script.Messages
 
-	maxLines := comic.Maxlines()
+	maxLines := comic.MaxLines()
 	if len(messages) > maxLines {
 		messages = messages[len(messages)-maxLines:]
 	}
