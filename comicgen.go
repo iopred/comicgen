@@ -28,6 +28,7 @@ const (
 	textAlignRight
 )
 
+// ComicGen is a comic generator!
 type ComicGen struct {
 	avatars   []image.Image
 	renderers []CellRenderer
@@ -61,20 +62,22 @@ func NewComicGen() (*ComicGen, error) {
 	return &ComicGen{
 		avatars: avatars,
 		renderers: []CellRenderer{
-			&OneSpeakerCellRenderer{},
-			&FlippedOneSpeakerCellRenderer{},
-			&OneSpeakerMonologueCellRenderer{},
-			&TwoSpeakerCellRenderer{},
+			&oneSpeakerCellRenderer{},
+			&flippedOneSpeakerCellRenderer{},
+			&oneSpeakerMonologueCellRenderer{},
+			&twoSpeakerCellRenderer{},
 		},
 		fontData: &draw2d.FontData{"ComicSans", draw2d.FontFamilySans, draw2d.FontStyleNormal},
 	}, nil
 }
 
+// Message contains a single message for a comment.
 type Message struct {
 	Speaker int
 	Text    string
 }
 
+// Script contains all the data necessary to generate a comic.
 type Script struct {
 	Messages []*Message
 	Author   string
@@ -82,25 +85,28 @@ type Script struct {
 
 const maxComicLength = 3
 
-func (comic *ComicGen) MaxLines() int {
+// MaxLines returns the maximum lines a comic can use.
+func (comic *ComicGen) Maxlines() int {
 	// Determine the longest script possible
 	maxLines := 0
 	for _, renderer := range comic.renderers {
-		if renderer.Lines() > maxLines {
-			maxLines = renderer.Lines()
+		if renderer.lines() > maxLines {
+			maxLines = renderer.lines()
 		}
 	}
 	return maxLines * maxComicLength
 }
 
+// Avatars returns the number of available avatars.
 func (comic *ComicGen) Avatars() int {
 	return len(comic.avatars)
 }
 
+// MakeComic makes a comic.
 func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 	messages := script.Messages
 
-	maxLines := comic.MaxLines()
+	maxLines := comic.Maxlines()
 	if len(messages) > maxLines {
 		messages = messages[len(messages)-maxLines:]
 	}
@@ -135,10 +141,10 @@ func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 
 	for i, c := 0, 0; i < len(plan); i++ {
 		renderer := plan[i]
-		renderer.Render(gc, comic.avatars, messages[c:c+renderer.Lines()], 5+240*float64(i), 5, 220, 200)
-		c += renderer.Lines()
+		renderer.render(gc, comic.avatars, messages[c:c+renderer.lines()], 5+240*float64(i), 5, 220, 200)
+		c += renderer.lines()
 	}
-	DrawTextInRect(gc, color.RGBA{0xdd, 0xdd, 0xdd, 0xff}, textAlignRight, 1, fmt.Sprintf("A comic by %v.", script.Author), 3, 0, 205, float64(width), 20)
+	drawTextInRect(gc, color.RGBA{0xdd, 0xdd, 0xdd, 0xff}, textAlignRight, 1, fmt.Sprintf("A comic by %v.", script.Author), 3, 0, 205, float64(width), 20)
 
 	return rgba, nil
 }
@@ -159,7 +165,7 @@ func createPlans(planchan chan []CellRenderer, renderers []CellRenderer, comicLe
 		return
 	}
 	for _, renderer := range renderers {
-		if s := renderer.Satisfies(remainingScript); s > 0 {
+		if s := renderer.satisfies(remainingScript); s > 0 {
 			createPlans(planchan, renderers, comicLength, append(currentPlan, renderer), remainingScript[s:], currentLength+1)
 		}
 	}
@@ -168,7 +174,7 @@ func createPlans(planchan chan []CellRenderer, renderers []CellRenderer, comicLe
 	}
 }
 
-func DrawSpeech(gc *draw2dimg.GraphicContext, border, radius, x, y, width, height, pointX, pointY float64) {
+func drawSpeech(gc *draw2dimg.GraphicContext, border, radius, x, y, width, height, pointX, pointY float64) {
 	gc.Save()
 	color := color.Black
 	gc.SetLineCap(draw2d.RoundCap)
@@ -240,23 +246,29 @@ func DrawSpeech(gc *draw2dimg.GraphicContext, border, radius, x, y, width, heigh
 	gc.Restore()
 }
 
-func DrawTextInRect(gc *draw2dimg.GraphicContext, color color.Color, align int, spacing float64, text string, border, x, y, width, height float64) {
+func drawTextInRect(gc *draw2dimg.GraphicContext, color color.Color, align int, spacing float64, text string, border, x, y, width, height float64) {
 	gc.Save()
 	gc.SetStrokeColor(color)
 	gc.SetFillColor(color)
 
 	wrapText, fontSize, _, _ := fitText(gc, spacing, text, width-border*2, height-border*2)
 
+	if fontSize > 50 {
+		fontSize = 50
+	}
+
 	gc.SetFontSize(fontSize)
 
-	_, textHeight := textSize(gc, spacing, wrapText)
+	_, t, _, b := textBounds(gc, spacing, wrapText)
 
-	top := y + (height-textHeight)/2
+	textHeight := -t + b
+
+	top := -t + y + (height-textHeight)/2
 
 	// Draw the text.
 	lines := strings.Split(wrapText, "\n")
 	for i, line := range lines {
-		l, t, r, _ := textBounds(gc, spacing, line)
+		l, _, r, _ := textBounds(gc, spacing, line)
 		textWidth := -l + r
 		// textHeight := -t + b
 		var px float64
@@ -268,7 +280,7 @@ func DrawTextInRect(gc *draw2dimg.GraphicContext, color color.Color, align int, 
 		case textAlignRight:
 			px = width - textWidth - border
 		}
-		py := top - t + fontSize*spacing*(float64(i))
+		py := top + fontSize*spacing*(float64(i))
 
 		gc.FillStringAt(line, px, py)
 	}
@@ -383,30 +395,28 @@ func wrapLine(buffer *bytes.Buffer, gc *draw2dimg.GraphicContext, spacing float6
 	return maxWidth
 }
 
-func InsetRectangle(x, y, width, height, inset float64) (float64, float64, float64, float64) {
-	return InsetRectangleHV(x, y, width, height, inset, inset)
+func insetRectangle(x, y, width, height, inset float64) (float64, float64, float64, float64) {
+	return insetRectangleHV(x, y, width, height, inset, inset)
 }
 
-func InsetRectangleHV(x, y, width, height, horizontal, vertical float64) (float64, float64, float64, float64) {
-	return InsetRectangleLRTB(x, y, width, height, horizontal, horizontal, vertical, vertical)
+func insetRectangleHV(x, y, width, height, horizontal, vertical float64) (float64, float64, float64, float64) {
+	return insetRectangleLRTB(x, y, width, height, horizontal, horizontal, vertical, vertical)
 }
 
-func InsetRectangleLRTB(x, y, width, height, left, right, top, bottom float64) (float64, float64, float64, float64) {
+func insetRectangleLRTB(x, y, width, height, left, right, top, bottom float64) (float64, float64, float64, float64) {
 	return x + left, y + top, width - left - right, height - top - bottom
 }
 
 type CellRenderer interface {
 	// Returns the maximum number of lines this renderer can satisfy.
-	Lines() int
+	lines() int
 	// If this returns a > 0 value, this renderer has said to be able to satisfy that many lines of the script.
 	// If this returns 0, this renderer cannot satisfy any lines and is unusable.
-	Satisfies(messages []*Message) int
-	Render(gc *draw2dimg.GraphicContext, avatars []image.Image, messages []*Message, x, y, width, height float64)
+	satisfies(messages []*Message) int
+	render(gc *draw2dimg.GraphicContext, avatars []image.Image, messages []*Message, x, y, width, height float64)
 }
 
-type Outliner struct{}
-
-func (c *Outliner) Outline(gc *draw2dimg.GraphicContext, x, y, width, height float64) {
+func outline(gc *draw2dimg.GraphicContext, x, y, width, height float64) {
 	gc.Save()
 	color := color.RGBA{0xdd, 0xdd, 0xdd, 0xff}
 	gc.SetLineCap(draw2d.RoundCap)
@@ -422,25 +432,23 @@ func (c *Outliner) Outline(gc *draw2dimg.GraphicContext, x, y, width, height flo
 	gc.Restore()
 }
 
-type OneSpeakerCellRenderer struct {
-	Outliner
-}
+type oneSpeakerCellRenderer struct{}
 
-func (c *OneSpeakerCellRenderer) Lines() int {
+func (c *oneSpeakerCellRenderer) lines() int {
 	return 1
 }
 
-func (c *OneSpeakerCellRenderer) Satisfies(messages []*Message) int {
+func (c *oneSpeakerCellRenderer) satisfies(messages []*Message) int {
 	if len(messages) > 0 {
 		return 1
 	}
 	return 0
 }
 
-func (c *OneSpeakerCellRenderer) Render(gc *draw2dimg.GraphicContext, avatars []image.Image, messages []*Message, x, y, width, height float64) {
-	c.Outline(gc, x, y, width, height)
+func (c *oneSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars []image.Image, messages []*Message, x, y, width, height float64) {
+	outline(gc, x, y, width, height)
 
-	if len(messages) != c.Lines() {
+	if len(messages) != c.lines() {
 		return
 	}
 
@@ -452,31 +460,29 @@ func (c *OneSpeakerCellRenderer) Render(gc *draw2dimg.GraphicContext, avatars []
 	gc.DrawImage(avatar)
 	gc.SetMatrixTransform(draw2d.NewIdentityMatrix())
 
-	bX, bY, bWidth, bHeight := InsetRectangleLRTB(x, y, width, height, border, border, border, border+float64(bounds.Dy())+arrowHeight*2)
+	bX, bY, bWidth, bHeight := insetRectangleLRTB(x, y, width, height, border, border, border, border+float64(bounds.Dy())+arrowHeight*2)
 
-	DrawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX+rand.Float64()*float64(bounds.Dx()), bY+bHeight+arrowHeight)
-	DrawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[0].Text), arrowHeight, bX, bY, bWidth, bHeight)
+	drawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX+rand.Float64()*float64(bounds.Dx()), bY+bHeight+arrowHeight)
+	drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[0].Text), arrowHeight, bX, bY, bWidth, bHeight)
 }
 
-type FlippedOneSpeakerCellRenderer struct {
-	Outliner
-}
+type flippedOneSpeakerCellRenderer struct{}
 
-func (c *FlippedOneSpeakerCellRenderer) Lines() int {
+func (c *flippedOneSpeakerCellRenderer) lines() int {
 	return 1
 }
 
-func (c *FlippedOneSpeakerCellRenderer) Satisfies(messages []*Message) int {
+func (c *flippedOneSpeakerCellRenderer) satisfies(messages []*Message) int {
 	if len(messages) > 0 && len(messages[0].Text) < 192 {
 		return 1
 	}
 	return 0
 }
 
-func (c *FlippedOneSpeakerCellRenderer) Render(gc *draw2dimg.GraphicContext, avatars []image.Image, messages []*Message, x, y, width, height float64) {
-	c.Outline(gc, x, y, width, height)
+func (c *flippedOneSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars []image.Image, messages []*Message, x, y, width, height float64) {
+	outline(gc, x, y, width, height)
 
-	if len(messages) != c.Lines() {
+	if len(messages) != c.lines() {
 		return
 	}
 
@@ -488,38 +494,36 @@ func (c *FlippedOneSpeakerCellRenderer) Render(gc *draw2dimg.GraphicContext, ava
 	gc.DrawImage(avatar)
 	gc.SetMatrixTransform(draw2d.NewIdentityMatrix())
 
-	bX, bY, bWidth, bHeight := InsetRectangleLRTB(x, y, width, height, border, border, border+float64(bounds.Dy())+arrowHeight*2, border)
+	bX, bY, bWidth, bHeight := insetRectangleLRTB(x, y, width, height, border, border, border+float64(bounds.Dy())+arrowHeight*2, border)
 
-	DrawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX+rand.Float64()*float64(bounds.Dx()), bY-arrowHeight)
-	DrawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[0].Text), arrowHeight, bX, bY, bWidth, bHeight)
+	drawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX+rand.Float64()*float64(bounds.Dx()), bY-arrowHeight)
+	drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[0].Text), arrowHeight, bX, bY, bWidth, bHeight)
 }
 
-type TwoSpeakerCellRenderer struct {
-	Outliner
-}
+type twoSpeakerCellRenderer struct{}
 
-func (c *TwoSpeakerCellRenderer) Lines() int {
+func (c *twoSpeakerCellRenderer) lines() int {
 	return 2
 }
 
-func (c *TwoSpeakerCellRenderer) Satisfies(messages []*Message) int {
-	if len(messages) > 1 && countSpeakers(messages[:c.Lines()]) == 2 && len(messages[0].Text) < 64 && len(messages[1].Text) < 64 {
+func (c *twoSpeakerCellRenderer) satisfies(messages []*Message) int {
+	if len(messages) > 1 && countSpeakers(messages[:c.lines()]) == 2 && len(messages[0].Text) < 64 && len(messages[1].Text) < 64 {
 		return 2
 	}
 	return 0
 }
 
-func (c *TwoSpeakerCellRenderer) Render(gc *draw2dimg.GraphicContext, avatars []image.Image, messages []*Message, x, y, width, height float64) {
-	c.Outline(gc, x, y, width, height)
+func (c *twoSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars []image.Image, messages []*Message, x, y, width, height float64) {
+	outline(gc, x, y, width, height)
 
-	if len(messages) != c.Lines() {
+	if len(messages) != c.lines() {
 		return
 	}
 
 	border := float64(5)
 	flipped := rand.Float64() >= 0.5
 	// get a rectangle for half the area
-	aX, aY, aWidth, aHeight := InsetRectangleLRTB(x, y, width, height, 0, 0, 0, height/2)
+	aX, aY, aWidth, aHeight := insetRectangleLRTB(x, y, width, height, 0, 0, 0, height/2)
 	for i := 0; i < 2; i++ {
 
 		avatar := avatars[messages[i].Speaker]
@@ -533,7 +537,7 @@ func (c *TwoSpeakerCellRenderer) Render(gc *draw2dimg.GraphicContext, avatars []
 		gc.DrawImage(avatar)
 		gc.SetMatrixTransform(draw2d.NewIdentityMatrix())
 
-		bX, bY, bWidth, bHeight := InsetRectangleLRTB(aX, aY, aWidth, aHeight, border, border+float64(bounds.Dx())+arrowHeight*3, border, border)
+		bX, bY, bWidth, bHeight := insetRectangleLRTB(aX, aY, aWidth, aHeight, border, border+float64(bounds.Dx())+arrowHeight*3, border, border)
 
 		if !flipped {
 			bX += aWidth - bWidth - (bX - x) - border
@@ -544,33 +548,31 @@ func (c *TwoSpeakerCellRenderer) Render(gc *draw2dimg.GraphicContext, avatars []
 			arrowX = bWidth + arrowHeight*2
 		}
 
-		DrawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX+arrowX, bY+rand.Float64()*float64(bounds.Dx()))
-		DrawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[i].Text), 10, bX, bY, bWidth, bHeight)
+		drawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX+arrowX, bY+rand.Float64()*float64(bounds.Dx()))
+		drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[i].Text), 10, bX, bY, bWidth, bHeight)
 
 		flipped = !flipped
 		aY += aHeight
 	}
 }
 
-type OneSpeakerMonologueCellRenderer struct {
-	Outliner
-}
+type oneSpeakerMonologueCellRenderer struct{}
 
-func (c *OneSpeakerMonologueCellRenderer) Lines() int {
+func (c *oneSpeakerMonologueCellRenderer) lines() int {
 	return 2
 }
 
-func (c *OneSpeakerMonologueCellRenderer) Satisfies(messages []*Message) int {
-	if len(messages) > 1 && countSpeakers(messages[:c.Lines()]) == 1 && len(messages[0].Text) < 64 {
+func (c *oneSpeakerMonologueCellRenderer) satisfies(messages []*Message) int {
+	if len(messages) > 1 && countSpeakers(messages[:c.lines()]) == 1 && len(messages[0].Text) < 64 {
 		return 2
 	}
 	return 0
 }
 
-func (c *OneSpeakerMonologueCellRenderer) Render(gc *draw2dimg.GraphicContext, avatars []image.Image, messages []*Message, x, y, width, height float64) {
-	c.Outline(gc, x, y, width, height)
+func (c *oneSpeakerMonologueCellRenderer) render(gc *draw2dimg.GraphicContext, avatars []image.Image, messages []*Message, x, y, width, height float64) {
+	outline(gc, x, y, width, height)
 
-	if len(messages) != c.Lines() {
+	if len(messages) != c.lines() {
 		return
 	}
 
@@ -582,15 +584,15 @@ func (c *OneSpeakerMonologueCellRenderer) Render(gc *draw2dimg.GraphicContext, a
 	gc.DrawImage(avatar)
 	gc.SetMatrixTransform(draw2d.NewIdentityMatrix())
 
-	bX, bY, bWidth, bHeight := InsetRectangleLRTB(x, y, width, height, border, border, border, border+float64(bounds.Dy())+arrowHeight*2)
+	bX, bY, bWidth, bHeight := insetRectangleLRTB(x, y, width, height, border, border, border, border+float64(bounds.Dy())+arrowHeight*2)
 
-	DrawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX+rand.Float64()*float64(bounds.Dx()), bY+bHeight+arrowHeight)
-	DrawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[0].Text), arrowHeight, bX, bY, bWidth, bHeight)
+	drawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX+rand.Float64()*float64(bounds.Dx()), bY+bHeight+arrowHeight)
+	drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[0].Text), arrowHeight, bX, bY, bWidth, bHeight)
 
-	bX, bY, bWidth, bHeight = InsetRectangleLRTB(x, y, width, height, border+float64(bounds.Dx())+arrowHeight*3, border, y+height-border*2-float64(bounds.Dy()), border)
+	bX, bY, bWidth, bHeight = insetRectangleLRTB(x, y, width, height, border+float64(bounds.Dx())+arrowHeight*3, border, y+height-border*2-float64(bounds.Dy()), border)
 
-	DrawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX-arrowHeight*2, bY+rand.Float64()*float64(bounds.Dy()))
-	DrawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[1].Text), arrowHeight, bX, bY, bWidth, bHeight)
+	drawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX-arrowHeight*2, bY+rand.Float64()*float64(bounds.Dy()))
+	drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[1].Text), arrowHeight, bX, bY, bWidth, bHeight)
 
 }
 
