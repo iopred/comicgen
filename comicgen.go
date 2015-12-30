@@ -7,7 +7,6 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
-	_ "image/jpeg"
 	"io/ioutil"
 	"math"
 	"math/rand"
@@ -30,7 +29,7 @@ const (
 // ComicGen is a comic generator!
 type ComicGen struct {
 	avatars   []image.Image
-	renderers []CellRenderer
+	renderers []cellRenderer
 	fontData  *draw2d.FontData
 }
 
@@ -42,7 +41,7 @@ func NewComicGen() (*ComicGen, error) {
 		return nil, fmt.Errorf("Could not open avatars directory: %v", err)
 	}
 
-	avatars := make([]image.Image, 0)
+	avatars := []image.Image{}
 	for _, avatarFile := range avatarFiles {
 		if avatarFile.IsDir() {
 			continue
@@ -58,7 +57,7 @@ func NewComicGen() (*ComicGen, error) {
 
 	return &ComicGen{
 		avatars: avatars,
-		renderers: []CellRenderer{
+		renderers: []cellRenderer{
 			&oneSpeakerCellRenderer{},
 			&flippedOneSpeakerCellRenderer{},
 			&oneSpeakerMonologueCellRenderer{},
@@ -109,9 +108,9 @@ func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 	}
 
 	// Create all plans that are sufficient, and pick a random one.
-	plans := make([][]CellRenderer, 0)
-	planchan := make(chan []CellRenderer, len(comic.renderers)*len(comic.renderers))
-	go createPlans(planchan, comic.renderers, maxComicLength, make([]CellRenderer, 0), messages, 0)
+	plans := [][]cellRenderer{}
+	planchan := make(chan []cellRenderer, len(comic.renderers)*len(comic.renderers))
+	go createPlans(planchan, comic.renderers, maxComicLength, make([]cellRenderer, 0), messages, 0)
 	for {
 		plan, ok := <-planchan
 		if !ok || plan == nil {
@@ -154,7 +153,7 @@ func countSpeakers(messages []*Message) int {
 	return len(seenMap)
 }
 
-func createPlans(planchan chan []CellRenderer, renderers []CellRenderer, comicLength int, currentPlan []CellRenderer, remainingScript []*Message, currentLength int) {
+func createPlans(planchan chan []cellRenderer, renderers []cellRenderer, comicLength int, currentPlan []cellRenderer, remainingScript []*Message, currentLength int) {
 	if currentLength > comicLength {
 		return
 	} else if len(remainingScript) == 0 {
@@ -404,7 +403,7 @@ func insetRectangleLRTB(x, y, width, height, left, right, top, bottom float64) (
 	return x + left, y + top, width - left - right, height - top - bottom
 }
 
-type CellRenderer interface {
+type cellRenderer interface {
 	// Returns the maximum number of lines this renderer can satisfy.
 	lines() int
 	// If this returns a > 0 value, this renderer has said to be able to satisfy that many lines of the script.
