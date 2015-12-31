@@ -30,9 +30,9 @@ const (
 
 // ComicGen is a comic generator!
 type ComicGen struct {
-	avatars   []image.Image
-	renderers []cellRenderer
-	fontData  *draw2d.FontData
+	defaultAvatars []image.Image
+	renderers      []cellRenderer
+	fontData       *draw2d.FontData
 }
 
 // NewComicGen creates a new comic generator.
@@ -58,7 +58,7 @@ func NewComicGen() (*ComicGen, error) {
 	draw2d.SetFontFolder("fonts")
 
 	return &ComicGen{
-		avatars: avatars,
+		defaultAvatars: avatars,
 		renderers: []cellRenderer{
 			&oneSpeakerCellRenderer{},
 			&flippedOneSpeakerCellRenderer{},
@@ -94,11 +94,6 @@ func (comic *ComicGen) MaxLines() int {
 		}
 	}
 	return maxLines * maxComicLength
-}
-
-// Avatars returns the number of available avatars.
-func (comic *ComicGen) Avatars() int {
-	return len(comic.avatars)
 }
 
 // MakeComic makes a comic.
@@ -138,11 +133,29 @@ func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 	gc.SetFontData(*comic.fontData)
 	gc.SetFont(draw2d.GetFont(gc.GetFontData()))
 
-	avatars := append([]image.Image{}, comic.avatars...)
+	avatars := map[int]image.Image{}
+
 	for i, url := range script.Avatars {
-		image, err := fetchAvatar(url)
-		if err == nil {
-			avatars[i] = image
+		if url != "" {
+			image, err := fetchAvatar(url)
+			if err == nil {
+				avatars[i] = image
+			}
+		}
+	}
+
+	seen := map[int]bool{}
+
+	for _, m := range script.Messages {
+		if avatars[m.Speaker] == nil {
+			for {
+				i := rand.Intn(len(comic.defaultAvatars))
+				if !seen[i] {
+					seen[i] = true
+					avatars[m.Speaker] = comic.defaultAvatars[i]
+					break
+				}
+			}
 		}
 	}
 
@@ -456,7 +469,7 @@ type cellRenderer interface {
 	// If this returns a > 0 value, this renderer has said to be able to satisfy that many lines of the script.
 	// If this returns 0, this renderer cannot satisfy any lines and is unusable.
 	satisfies(messages []*Message) int
-	render(gc *draw2dimg.GraphicContext, avatars []image.Image, messages []*Message, x, y, width, height float64)
+	render(gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64)
 }
 
 type oneSpeakerCellRenderer struct{}
@@ -472,7 +485,7 @@ func (c *oneSpeakerCellRenderer) satisfies(messages []*Message) int {
 	return 0
 }
 
-func (c *oneSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars []image.Image, messages []*Message, x, y, width, height float64) {
+func (c *oneSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
 	outline(gc, x, y, width, height)
 
 	if len(messages) != c.lines() {
@@ -508,7 +521,7 @@ func (c *flippedOneSpeakerCellRenderer) satisfies(messages []*Message) int {
 	return 0
 }
 
-func (c *flippedOneSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars []image.Image, messages []*Message, x, y, width, height float64) {
+func (c *flippedOneSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
 	outline(gc, x, y, width, height)
 
 	if len(messages) != c.lines() {
@@ -544,7 +557,7 @@ func (c *twoSpeakerCellRenderer) satisfies(messages []*Message) int {
 	return 0
 }
 
-func (c *twoSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars []image.Image, messages []*Message, x, y, width, height float64) {
+func (c *twoSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
 	outline(gc, x, y, width, height)
 
 	if len(messages) != c.lines() {
@@ -601,7 +614,7 @@ func (c *oneSpeakerMonologueCellRenderer) satisfies(messages []*Message) int {
 	return 0
 }
 
-func (c *oneSpeakerMonologueCellRenderer) render(gc *draw2dimg.GraphicContext, avatars []image.Image, messages []*Message, x, y, width, height float64) {
+func (c *oneSpeakerMonologueCellRenderer) render(gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
 	outline(gc, x, y, width, height)
 
 	if len(messages) != c.lines() {
