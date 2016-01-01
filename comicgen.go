@@ -301,12 +301,13 @@ func drawTextInRect(gc *draw2dimg.GraphicContext, color color.Color, align int, 
 
 	top := -t + y + (height-textHeight)/2
 
+	lineHeight := fUnitsToFloat64(gc.Current.Font.VMetric(fixed.Int26_6(gc.Current.Scale), 0).AdvanceHeight) * spacing
+
 	// Draw the text.
 	lines := strings.Split(wrapText, "\n")
 	for i, line := range lines {
 		l, _, r, _ := textBounds(gc, spacing, line)
 		textWidth := -l + r
-		// textHeight := -t + b
 		var px float64
 		switch align {
 		case textAlignLeft:
@@ -316,7 +317,7 @@ func drawTextInRect(gc *draw2dimg.GraphicContext, color color.Color, align int, 
 		case textAlignRight:
 			px = width - textWidth - border
 		}
-		py := top + fontSize*spacing*(float64(i))
+		py := top + lineHeight*float64(i)
 
 		gc.FillStringAt(line, px, py)
 	}
@@ -331,6 +332,8 @@ func fUnitsToFloat64(x fixed.Int26_6) float64 {
 func textBounds(gc *draw2dimg.GraphicContext, spacing float64, text string) (left, top, right, bottom float64) {
 	lines := strings.Split(text, "\n")
 
+	lineHeight := fUnitsToFloat64(gc.Current.Font.VMetric(fixed.Int26_6(gc.Current.Scale), 0).AdvanceHeight) * spacing
+
 	for i, line := range lines {
 		l, t, r, b := gc.GetStringBounds(line)
 
@@ -344,7 +347,7 @@ func textBounds(gc *draw2dimg.GraphicContext, spacing float64, text string) (lef
 			top = t
 		}
 
-		b += gc.Current.FontSize * spacing * (float64(i))
+		b += lineHeight * float64(i) * spacing
 		if b > bottom {
 			bottom = b
 		}
