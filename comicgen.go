@@ -65,7 +65,7 @@ func NewComicGen() (*ComicGen, error) {
 			&oneSpeakerMonologueCellRenderer{},
 			&twoSpeakerCellRenderer{},
 		},
-		fontData: &draw2d.FontData{"ComicSans", draw2d.FontFamilySans, draw2d.FontStyleNormal},
+		fontData: &draw2d.FontData{"arial", draw2d.FontFamilySans, draw2d.FontStyleNormal},
 	}, nil
 }
 
@@ -289,8 +289,8 @@ func drawTextInRect(gc *draw2dimg.GraphicContext, color color.Color, align int, 
 
 	wrapText, fontSize, _, _ := fitText(gc, spacing, text, width-border*2, height-border*2)
 
-	if fontSize > 50 {
-		fontSize = 50
+	if fontSize > 40 {
+		fontSize = 40
 	}
 
 	gc.SetFontSize(fontSize)
