@@ -93,7 +93,7 @@ func (comic *ComicGen) MaxLines() int {
 			maxLines = renderer.lines()
 		}
 	}
-	return maxLines * maxComicLength
+	return maxLines*maxComicLength - 1
 }
 
 // MakeComic makes a comic.
