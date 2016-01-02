@@ -37,7 +37,7 @@ const (
 type ComicGen struct {
 	sync.Mutex
 	emoji          map[rune]string
-	defaultAvatars []image.Image
+	defaultAvatars []string
 	renderers      []cellRenderer
 	current        draw.Image
 	font           *draw2d.FontData
@@ -53,16 +53,12 @@ func NewComicGen(font string) (*ComicGen, error) {
 		return nil, fmt.Errorf("Could not open avatars directory: %v", err)
 	}
 
-	avatars := []image.Image{}
+	avatars := []string{}
 	for _, avatarFile := range avatarFiles {
 		if avatarFile.IsDir() {
 			continue
 		}
-		if file, err := os.Open("avatars/" + avatarFile.Name()); err == nil {
-			if avatar, _, err := image.Decode(bufio.NewReader(file)); err == nil {
-				avatars = append(avatars, avatar)
-			}
-		}
+		avatars = append(avatars, "avatars/"+avatarFile.Name())
 	}
 
 	emoji := map[rune]string{}
@@ -91,7 +87,7 @@ func NewComicGen(font string) (*ComicGen, error) {
 				continue
 			}
 
-			emoji[rune(i)] = name
+			emoji[rune(i)] = "emoji/" + name
 		}
 	}
 
@@ -197,7 +193,12 @@ func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 				i := rand.Intn(len(comic.defaultAvatars))
 				if !seen[i] {
 					seen[i] = true
-					avatars[m.Speaker] = comic.defaultAvatars[i]
+					if file, err := os.Open(comic.defaultAvatars[i]); err == nil {
+						defer file.Close()
+						if avatar, _, err := image.Decode(bufio.NewReader(file)); err == nil {
+							avatars[m.Speaker] = avatar
+						}
+					}
 					break
 				}
 			}
@@ -344,7 +345,8 @@ func (comic *ComicGen) drawGlyph(gc *draw2dimg.GraphicContext, glyph truetype.In
 }
 
 func (comic *ComicGen) drawEmoji(gc *draw2dimg.GraphicContext, r rune, x, y, width, height float64) error {
-	if file, err := os.Open("emoji/" + comic.emoji[r]); err == nil {
+	if file, err := os.Open(comic.emoji[r]); err == nil {
+		defer file.Close()
 		if emoji, _, err := image.Decode(bufio.NewReader(file)); err == nil {
 			gc.Save()
 			gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x, y))
@@ -794,6 +796,9 @@ func (c *oneSpeakerMonologueCellRenderer) render(comic *ComicGen, gc *draw2dimg.
 }
 
 func (comic *ComicGen) drawImage(gc *draw2dimg.GraphicContext, img image.Image, bounds image.Rectangle) {
+	if img == nil {
+		return
+	}
 	x, y := gc.Current.Tr.TransformPoint(float64(bounds.Min.X), float64(bounds.Min.Y))
 
 	sub := image.Rectangle{image.Point{int(x), int(y)}, image.Point{int(x) + bounds.Dx(), int(y) + bounds.Dy()}}

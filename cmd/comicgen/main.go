@@ -37,7 +37,6 @@ func main() {
 		Author: "iopred",
 		Avatars: map[int]string{
 			0: "https://avatars0.githubusercontent.com/u/1529218?v=3&s=460",
-			1: "https://avatars0.githubusercontent.com/u/1523217?v=3&s=460",
 		},
 	})
 
