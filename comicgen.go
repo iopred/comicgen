@@ -799,9 +799,9 @@ func (comic *ComicGen) drawImage(gc *draw2dimg.GraphicContext, img image.Image, 
 	if img == nil {
 		return
 	}
-	x, y := gc.Current.Tr.TransformPoint(float64(bounds.Min.X), float64(bounds.Min.Y))
-
-	sub := image.Rectangle{image.Point{int(x), int(y)}, image.Point{int(x) + bounds.Dx(), int(y) + bounds.Dy()}}
-
-	draw.CatmullRom.Scale(comic.current, sub, img, img.Bounds(), draw.Over, &draw.Options{})
+	ib := img.Bounds()
+	gc.Save()
+	gc.ComposeMatrixTransform(draw2d.NewScaleMatrix(float64(bounds.Dx())/float64(ib.Dx()), float64(bounds.Dy())/float64(ib.Dy())))
+	gc.DrawImage(img)
+	gc.Restore()
 }
