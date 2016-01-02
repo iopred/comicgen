@@ -13,7 +13,7 @@ import (
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
-	c, _ := comicgen.NewComicGen()
+	c, _ := comicgen.NewComicGen("arial")
 
 	i, _ := c.MakeComic(&comicgen.Script{
 		Messages: []*comicgen.Message{
@@ -23,11 +23,11 @@ func main() {
 			},
 			{
 				Speaker: 1,
-				Text:    "Foo!",
+				Text:    "🌝",
 			},
 			{
 				Speaker: 1,
-				Text:    "Bar!",
+				Text:    "Typing indicators are the best 🌝",
 			},
 			{
 				Speaker: 0,

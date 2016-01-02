@@ -6,17 +6,22 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"image/draw"
 	_ "image/jpeg" // For JPEG decoding
 	"io/ioutil"
+	"log"
 	"math"
 	"math/rand"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 
+	"github.com/golang/freetype/truetype"
 	"github.com/llgcode/draw2d"
 	"github.com/llgcode/draw2d/draw2dimg"
+	"golang.org/x/image/draw"
+	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
 )
 
@@ -30,13 +35,18 @@ const (
 
 // ComicGen is a comic generator!
 type ComicGen struct {
+	sync.Mutex
+	emoji          map[rune]string
 	defaultAvatars []image.Image
 	renderers      []cellRenderer
-	fontData       *draw2d.FontData
+	current        draw.Image
+	font           *draw2d.FontData
+	glyphBuf       *truetype.GlyphBuf
 }
 
 // NewComicGen creates a new comic generator.
-func NewComicGen() (*ComicGen, error) {
+func NewComicGen(font string) (*ComicGen, error) {
+
 	var avatarFiles []os.FileInfo
 	var err error
 	if avatarFiles, err = ioutil.ReadDir("avatars"); err != nil {
@@ -55,9 +65,40 @@ func NewComicGen() (*ComicGen, error) {
 		}
 	}
 
+	emoji := map[rune]string{}
+	var emojiFiles []os.FileInfo
+	if emojiFiles, err = ioutil.ReadDir("emoji"); err != nil {
+		return nil, fmt.Errorf("Could not open avatars directory: %v", err)
+	}
+
+	for _, emojiFile := range emojiFiles {
+		if emojiFile.IsDir() {
+			continue
+		}
+		name := emojiFile.Name()
+		if !strings.HasPrefix(name, "emoji_u") {
+			continue
+		}
+		index := strings.Index(name, ".")
+		if index == -1 {
+			continue
+		}
+		chars := strings.Split(name[7:index], "_")
+
+		if len(chars) == 1 {
+			i, e := strconv.ParseInt(chars[0], 16, 32)
+			if e != nil {
+				continue
+			}
+
+			emoji[rune(i)] = name
+		}
+	}
+
 	draw2d.SetFontFolder("fonts")
 
 	return &ComicGen{
+		emoji:          emoji,
 		defaultAvatars: avatars,
 		renderers: []cellRenderer{
 			&oneSpeakerCellRenderer{},
@@ -65,7 +106,8 @@ func NewComicGen() (*ComicGen, error) {
 			&oneSpeakerMonologueCellRenderer{},
 			&twoSpeakerCellRenderer{},
 		},
-		fontData: &draw2d.FontData{"arial", draw2d.FontFamilySans, draw2d.FontStyleNormal},
+		font:     &draw2d.FontData{font, draw2d.FontFamilySans, draw2d.FontStyleNormal},
+		glyphBuf: &truetype.GlyphBuf{},
 	}, nil
 }
 
@@ -98,6 +140,9 @@ func (comic *ComicGen) MaxLines() int {
 
 // MakeComic makes a comic.
 func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
+	comic.Lock()
+	defer comic.Unlock()
+
 	messages := script.Messages
 
 	maxLines := comic.MaxLines()
@@ -125,13 +170,13 @@ func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 	width := len(plan)*240 - 10
 
 	// Initialize the context.
-	rgba := image.NewRGBA(image.Rect(0, 0, width, 225))
-	draw.Draw(rgba, rgba.Bounds(), image.White, image.ZP, draw.Src)
+	comic.current = image.NewRGBA(image.Rect(0, 0, width, 225))
+	draw.Draw(comic.current, comic.current.Bounds(), image.White, image.ZP, draw.Src)
 
-	gc := draw2dimg.NewGraphicContext(rgba)
+	gc := draw2dimg.NewGraphicContext(comic.current)
 	gc.SetDPI(72)
-	gc.SetFontData(*comic.fontData)
-	gc.SetFont(draw2d.GetFont(gc.GetFontData()))
+	gc.SetFontData(*comic.font)
+	gc.SetFont(draw2d.GetFont(*comic.font))
 
 	avatars := map[int]image.Image{}
 
@@ -161,12 +206,12 @@ func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 
 	for i, c := 0, 0; i < len(plan); i++ {
 		renderer := plan[i]
-		renderer.render(gc, avatars, messages[c:c+renderer.lines()], 5+240*float64(i), 5, 220, 200)
+		renderer.render(comic, gc, avatars, messages[c:c+renderer.lines()], 5+240*float64(i), 5, 220, 200)
 		c += renderer.lines()
 	}
-	drawTextInRect(gc, color.RGBA{0xdd, 0xdd, 0xdd, 0xff}, textAlignRight, 1, fmt.Sprintf("A comic by %v.", script.Author), 3, 0, 205, float64(width), 20)
+	comic.drawTextInRect(gc, color.RGBA{0xdd, 0xdd, 0xdd, 0xff}, textAlignRight, 1, fmt.Sprintf("A comic by %v.", script.Author), 3, 0, 205, float64(width), 20)
 
-	return rgba, nil
+	return comic.current, nil
 }
 
 func fetchAvatar(url string) (image.Image, error) {
@@ -282,12 +327,106 @@ func drawSpeech(gc *draw2dimg.GraphicContext, border, radius, x, y, width, heigh
 	gc.Restore()
 }
 
-func drawTextInRect(gc *draw2dimg.GraphicContext, color color.Color, align int, spacing float64, text string, border, x, y, width, height float64) {
+func (comic *ComicGen) loadGlyph(gc *draw2dimg.GraphicContext, glyph truetype.Index) error {
+	return comic.glyphBuf.Load(gc.Current.Font, fixed.Int26_6(gc.Current.Scale), glyph, font.HintingNone)
+}
+
+func (comic *ComicGen) drawGlyph(gc *draw2dimg.GraphicContext, glyph truetype.Index, dx, dy float64) error {
+	if err := comic.loadGlyph(gc, glyph); err != nil {
+		return err
+	}
+	e0 := 0
+	for _, e1 := range comic.glyphBuf.Ends {
+		draw2dimg.DrawContour(gc, comic.glyphBuf.Points[e0:e1], dx, dy)
+		e0 = e1
+	}
+	return nil
+}
+
+func (comic *ComicGen) drawEmoji(gc *draw2dimg.GraphicContext, r rune, x, y, width, height float64) error {
+	if file, err := os.Open("emoji/" + comic.emoji[r]); err == nil {
+		if emoji, _, err := image.Decode(bufio.NewReader(file)); err == nil {
+			gc.Save()
+			gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x, y))
+			comic.drawImage(gc, emoji, image.Rectangle{image.Point{0, 0}, image.Point{int(width), int(height)}})
+			gc.Restore()
+			return nil
+		} else {
+			return err
+		}
+	} else {
+		return err
+	}
+}
+
+func (comic *ComicGen) createStringPath(gc *draw2dimg.GraphicContext, s string, x, y float64) float64 {
+	font := gc.Current.Font
+	startx := x
+	prev, hasPrev := truetype.Index(0), false
+	for _, r := range s {
+		index := font.Index(r)
+		if hasPrev {
+			x += fUnitsToFloat64(font.Kern(fixed.Int26_6(gc.Current.Scale), prev, index))
+		}
+
+		if comic.emoji[r] != "" {
+			l, t, ri, b := comic.getStringBounds(gc, string(r))
+			l -= 1
+			t -= 1
+			ri += 1
+			b += 1
+			comic.drawEmoji(gc, r, x+l, y+t, ri-l, b-t)
+		} else {
+			err := comic.drawGlyph(gc, index, x, y)
+			if err != nil {
+				log.Println(err)
+				return startx - x
+			}
+		}
+		x += fUnitsToFloat64(font.HMetric(fixed.Int26_6(gc.Current.Scale), index).AdvanceWidth)
+		prev, hasPrev = index, true
+	}
+	return x - startx
+}
+
+func (comic *ComicGen) getStringBounds(gc *draw2dimg.GraphicContext, s string) (left, top, right, bottom float64) {
+	font := gc.Current.Font
+	top, left, bottom, right = 10e6, 10e6, -10e6, -10e6
+	cursor := 0.0
+	prev, hasPrev := truetype.Index(0), false
+	for _, rune := range s {
+		index := font.Index(rune)
+		if hasPrev {
+			cursor += fUnitsToFloat64(font.Kern(fixed.Int26_6(gc.Current.Scale), prev, index))
+		}
+
+		if err := comic.loadGlyph(gc, index); err != nil {
+			log.Println(err)
+			return 0, 0, 0, 0
+		}
+		e0 := 0
+		for _, e1 := range comic.glyphBuf.Ends {
+			ps := comic.glyphBuf.Points[e0:e1]
+			for _, p := range ps {
+				x, y := pointToF64Point(p)
+				top = math.Min(top, y)
+				bottom = math.Max(bottom, y)
+				left = math.Min(left, x+cursor)
+				right = math.Max(right, x+cursor)
+			}
+		}
+		cursor += fUnitsToFloat64(font.HMetric(fixed.Int26_6(gc.Current.Scale), index).AdvanceWidth)
+		prev, hasPrev = index, true
+	}
+	return left, top, right, bottom
+}
+
+func (comic *ComicGen) drawTextInRect(gc *draw2dimg.GraphicContext, color color.Color, align int, spacing float64, text string, border, x, y, width, height float64) {
 	gc.Save()
 	gc.SetStrokeColor(color)
 	gc.SetFillColor(color)
 
-	wrapText, fontSize, _, _ := fitText(gc, spacing, text, width-border*2, height-border*2)
+	wrapText, fontSize, _, _ := comic.fitText(gc, spacing, text, width-border*2, height-border*2)
 
 	if fontSize > 40 {
 		fontSize = 40
@@ -295,7 +434,7 @@ func drawTextInRect(gc *draw2dimg.GraphicContext, color color.Color, align int, 
 
 	gc.SetFontSize(fontSize)
 
-	_, t, _, b := textBounds(gc, spacing, wrapText)
+	_, t, _, b := comic.textBounds(gc, spacing, wrapText)
 
 	textHeight := -t + b
 
@@ -306,7 +445,7 @@ func drawTextInRect(gc *draw2dimg.GraphicContext, color color.Color, align int, 
 	// Draw the text.
 	lines := strings.Split(wrapText, "\n")
 	for i, line := range lines {
-		l, _, r, _ := textBounds(gc, spacing, line)
+		l, _, r, _ := comic.textBounds(gc, spacing, line)
 		textWidth := -l + r
 		var px float64
 		switch align {
@@ -319,7 +458,8 @@ func drawTextInRect(gc *draw2dimg.GraphicContext, color color.Color, align int, 
 		}
 		py := top + lineHeight*float64(i)
 
-		gc.FillStringAt(line, px, py)
+		comic.createStringPath(gc, line, px, py)
+		gc.Fill()
 	}
 	gc.Restore()
 }
@@ -329,13 +469,17 @@ func fUnitsToFloat64(x fixed.Int26_6) float64 {
 	return float64(scaled/256) + float64(scaled%256)/256.0
 }
 
-func textBounds(gc *draw2dimg.GraphicContext, spacing float64, text string) (left, top, right, bottom float64) {
+func pointToF64Point(p truetype.Point) (x, y float64) {
+	return fUnitsToFloat64(p.X), -fUnitsToFloat64(p.Y)
+}
+
+func (comic *ComicGen) textBounds(gc *draw2dimg.GraphicContext, spacing float64, text string) (left, top, right, bottom float64) {
 	lines := strings.Split(text, "\n")
 
 	lineHeight := fUnitsToFloat64(gc.Current.Font.VMetric(fixed.Int26_6(gc.Current.Scale), 0).AdvanceHeight) * spacing
 
 	for i, line := range lines {
-		l, t, r, b := gc.GetStringBounds(line)
+		l, t, r, b := comic.getStringBounds(gc, line)
 
 		if l < left {
 			left = l
@@ -355,12 +499,12 @@ func textBounds(gc *draw2dimg.GraphicContext, spacing float64, text string) (lef
 	return
 }
 
-func textSize(gc *draw2dimg.GraphicContext, spacing float64, text string) (width, height float64) {
-	left, top, right, bottom := textBounds(gc, spacing, text)
+func (comic *ComicGen) textSize(gc *draw2dimg.GraphicContext, spacing float64, text string) (width, height float64) {
+	left, top, right, bottom := comic.textBounds(gc, spacing, text)
 	return -left + right, -top + bottom
 }
 
-func fitText(gc *draw2dimg.GraphicContext, spacing float64, text string, width, height float64) (wrappedText string, fontSize, wrapWidth, wrapHeight float64) {
+func (comic *ComicGen) fitText(gc *draw2dimg.GraphicContext, spacing float64, text string, width, height float64) (wrappedText string, fontSize, wrapWidth, wrapHeight float64) {
 	gc.Save()
 
 	// Match aspect ratios, favoring width.
@@ -370,8 +514,8 @@ func fitText(gc *draw2dimg.GraphicContext, spacing float64, text string, width, 
 
 		gc.SetFontSize(fontSize)
 
-		wrappedText, _ = wrapText(gc, spacing, text, width)
-		wrapWidth, wrapHeight = textSize(gc, spacing, wrappedText)
+		wrappedText, _ = comic.wrapText(gc, spacing, text, width)
+		wrapWidth, wrapHeight = comic.textSize(gc, spacing, wrappedText)
 		newTextAspect := wrapWidth / wrapHeight
 		if newTextAspect > aspect {
 			low = fontSize
@@ -392,12 +536,12 @@ func fitText(gc *draw2dimg.GraphicContext, spacing float64, text string, width, 
 	return
 }
 
-func wrapText(gc *draw2dimg.GraphicContext, spacing float64, text string, wrapWidth float64) (string, float64) {
+func (comic *ComicGen) wrapText(gc *draw2dimg.GraphicContext, spacing float64, text string, wrapWidth float64) (string, float64) {
 	var buffer bytes.Buffer
 	var maxWidth float64
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
-		width := wrapLine(&buffer, gc, spacing, line, wrapWidth)
+		width := comic.wrapLine(&buffer, gc, spacing, line, wrapWidth)
 		if width > maxWidth {
 			maxWidth = width
 		}
@@ -408,16 +552,16 @@ func wrapText(gc *draw2dimg.GraphicContext, spacing float64, text string, wrapWi
 	return buffer.String(), maxWidth
 }
 
-func wrapLine(buffer *bytes.Buffer, gc *draw2dimg.GraphicContext, spacing float64, line string, wrapWidth float64) float64 {
+func (comic *ComicGen) wrapLine(buffer *bytes.Buffer, gc *draw2dimg.GraphicContext, spacing float64, line string, wrapWidth float64) float64 {
 	var width float64
 	var runningWidth float64
 	var maxWidth float64
 	words := strings.Split(line, " ")
 	for i, word := range words {
 		if i != 0 {
-			width, _ = textSize(gc, spacing, " "+word)
+			width, _ = comic.textSize(gc, spacing, " "+word)
 		} else {
-			width, _ = textSize(gc, spacing, word)
+			width, _ = comic.textSize(gc, spacing, word)
 		}
 		if width > maxWidth {
 			maxWidth = width
@@ -472,7 +616,7 @@ type cellRenderer interface {
 	// If this returns a > 0 value, this renderer has said to be able to satisfy that many lines of the script.
 	// If this returns 0, this renderer cannot satisfy any lines and is unusable.
 	satisfies(messages []*Message) int
-	render(gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64)
+	render(comic *ComicGen, gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64)
 }
 
 type oneSpeakerCellRenderer struct{}
@@ -488,7 +632,7 @@ func (c *oneSpeakerCellRenderer) satisfies(messages []*Message) int {
 	return 0
 }
 
-func (c *oneSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
+func (c *oneSpeakerCellRenderer) render(comic *ComicGen, gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
 	outline(gc, x, y, width, height)
 
 	if len(messages) != c.lines() {
@@ -502,13 +646,14 @@ func (c *oneSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars ma
 
 	gc.Save()
 	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x+border, y+height-border-float64(bounds.Dy())))
-	drawAvatar(gc, avatar, bounds)
+	comic.drawImage(gc, avatar, bounds)
+	outline(gc, 0, 0, float64(bounds.Dx()), float64(bounds.Dy()))
 	gc.Restore()
 
 	bX, bY, bWidth, bHeight := insetRectangleLRTB(x, y, width, height, border, border, border, border+float64(bounds.Dy())+arrowHeight*2)
 
 	drawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX+rand.Float64()*float64(bounds.Dx()), bY+bHeight+arrowHeight)
-	drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[0].Text), arrowHeight, bX, bY, bWidth, bHeight)
+	comic.drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[0].Text), arrowHeight, bX, bY, bWidth, bHeight)
 }
 
 type flippedOneSpeakerCellRenderer struct{}
@@ -524,7 +669,7 @@ func (c *flippedOneSpeakerCellRenderer) satisfies(messages []*Message) int {
 	return 0
 }
 
-func (c *flippedOneSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
+func (c *flippedOneSpeakerCellRenderer) render(comic *ComicGen, gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
 	outline(gc, x, y, width, height)
 
 	if len(messages) != c.lines() {
@@ -538,13 +683,14 @@ func (c *flippedOneSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, ava
 
 	gc.Save()
 	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x+border, y+border))
-	drawAvatar(gc, avatar, bounds)
+	comic.drawImage(gc, avatar, bounds)
+	outline(gc, 0, 0, float64(bounds.Dx()), float64(bounds.Dy()))
 	gc.Restore()
 
 	bX, bY, bWidth, bHeight := insetRectangleLRTB(x, y, width, height, border, border, border+float64(bounds.Dy())+arrowHeight*2, border)
 
 	drawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX+rand.Float64()*float64(bounds.Dx()), bY-arrowHeight)
-	drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[0].Text), arrowHeight, bX, bY, bWidth, bHeight)
+	comic.drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[0].Text), arrowHeight, bX, bY, bWidth, bHeight)
 }
 
 type twoSpeakerCellRenderer struct{}
@@ -560,7 +706,7 @@ func (c *twoSpeakerCellRenderer) satisfies(messages []*Message) int {
 	return 0
 }
 
-func (c *twoSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
+func (c *twoSpeakerCellRenderer) render(comic *ComicGen, gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
 	outline(gc, x, y, width, height)
 
 	if len(messages) != c.lines() {
@@ -582,7 +728,8 @@ func (c *twoSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars ma
 		} else {
 			gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(aX+border, aY+border))
 		}
-		drawAvatar(gc, avatar, bounds)
+		comic.drawImage(gc, avatar, bounds)
+		outline(gc, 0, 0, float64(bounds.Dx()), float64(bounds.Dy()))
 		gc.Restore()
 
 		bX, bY, bWidth, bHeight := insetRectangleLRTB(aX, aY, aWidth, aHeight, border, border+float64(bounds.Dx())+arrowHeight*3, border, border)
@@ -597,7 +744,7 @@ func (c *twoSpeakerCellRenderer) render(gc *draw2dimg.GraphicContext, avatars ma
 		}
 
 		drawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX+arrowX, bY+rand.Float64()*float64(bounds.Dx()))
-		drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[i].Text), 10, bX, bY, bWidth, bHeight)
+		comic.drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[i].Text), 10, bX, bY, bWidth, bHeight)
 
 		flipped = !flipped
 		aY += aHeight
@@ -617,7 +764,7 @@ func (c *oneSpeakerMonologueCellRenderer) satisfies(messages []*Message) int {
 	return 0
 }
 
-func (c *oneSpeakerMonologueCellRenderer) render(gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
+func (c *oneSpeakerMonologueCellRenderer) render(comic *ComicGen, gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
 	outline(gc, x, y, width, height)
 
 	if len(messages) != c.lines() {
@@ -631,27 +778,25 @@ func (c *oneSpeakerMonologueCellRenderer) render(gc *draw2dimg.GraphicContext, a
 
 	gc.Save()
 	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x+border, y+height-border-float64(bounds.Dy())))
-	drawAvatar(gc, avatar, bounds)
+	comic.drawImage(gc, avatar, bounds)
+	outline(gc, 0, 0, float64(bounds.Dx()), float64(bounds.Dy()))
 	gc.Restore()
 
 	bX, bY, bWidth, bHeight := insetRectangleLRTB(x, y, width, height, border, border, border, border+float64(bounds.Dy())+arrowHeight*2)
 
 	drawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX+rand.Float64()*float64(bounds.Dx()), bY+bHeight+arrowHeight)
-	drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[0].Text), arrowHeight, bX, bY, bWidth, bHeight)
+	comic.drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[0].Text), arrowHeight, bX, bY, bWidth, bHeight)
 
 	bX, bY, bWidth, bHeight = insetRectangleLRTB(x, y, width, height, border+float64(bounds.Dx())+arrowHeight*3, border, y+height-border*2-float64(bounds.Dy()), border)
 
 	drawSpeech(gc, 2, border, bX, bY, bWidth, bHeight, bX-arrowHeight*2, bY+rand.Float64()*float64(bounds.Dy()))
-	drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[1].Text), arrowHeight, bX, bY, bWidth, bHeight)
-
+	comic.drawTextInRect(gc, image.Black, textAlignCenter, 1, string(messages[1].Text), arrowHeight, bX, bY, bWidth, bHeight)
 }
 
-func drawAvatar(gc *draw2dimg.GraphicContext, image image.Image, bounds image.Rectangle) {
-	ib := image.Bounds()
-	gc.Save()
-	gc.ComposeMatrixTransform(draw2d.NewScaleMatrix(float64(bounds.Dx())/float64(ib.Dx()), float64(bounds.Dy())/float64(ib.Dy())))
-	gc.DrawImage(image)
-	gc.Restore()
+func (comic *ComicGen) drawImage(gc *draw2dimg.GraphicContext, img image.Image, bounds image.Rectangle) {
+	x, y := gc.Current.Tr.TransformPoint(float64(bounds.Min.X), float64(bounds.Min.Y))
 
-	outline(gc, 0, 0, float64(bounds.Dx()), float64(bounds.Dy()))
+	sub := image.Rectangle{image.Point{int(x), int(y)}, image.Point{int(x) + bounds.Dx(), int(y) + bounds.Dy()}}
+
+	draw.CatmullRom.Scale(comic.current, sub, img, img.Bounds(), draw.Over, &draw.Options{})
 }
