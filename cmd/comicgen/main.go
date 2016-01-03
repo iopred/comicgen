@@ -13,7 +13,7 @@ import (
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
-	c, _ := comicgen.NewComicGen("arial")
+	c := comicgen.NewComicGen("arial")
 
 	i, _ := c.MakeComic(&comicgen.Script{
 		Messages: []*comicgen.Message{
