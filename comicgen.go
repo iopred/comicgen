@@ -36,35 +36,38 @@ const (
 // ComicGen is a comic generator!
 type ComicGen struct {
 	sync.Mutex
-	emoji          map[rune]string
-	defaultAvatars []string
-	renderers      []cellRenderer
-	current        draw.Image
-	font           *draw2d.FontData
-	glyphBuf       *truetype.GlyphBuf
+	current  draw.Image
+	font     *draw2d.FontData
+	glyphBuf *truetype.GlyphBuf
 }
 
-// NewComicGen creates a new comic generator.
-func NewComicGen(font string) (*ComicGen, error) {
+var defaultEmoji = map[rune]string{}
+var defaultAvatars = []string{}
+var defaultRenderers = []cellRenderer{
+	&oneSpeakerCellRenderer{},
+	&flippedOneSpeakerCellRenderer{},
+	&oneSpeakerMonologueCellRenderer{},
+	&twoSpeakerCellRenderer{},
+}
+
+func init() {
 
 	var avatarFiles []os.FileInfo
 	var err error
 	if avatarFiles, err = ioutil.ReadDir("avatars"); err != nil {
-		return nil, fmt.Errorf("Could not open avatars directory: %v", err)
+		fmt.Errorf("Could not open avatars directory: %v", err)
 	}
 
-	avatars := []string{}
 	for _, avatarFile := range avatarFiles {
 		if avatarFile.IsDir() {
 			continue
 		}
-		avatars = append(avatars, "avatars/"+avatarFile.Name())
+		defaultAvatars = append(defaultAvatars, "avatars/"+avatarFile.Name())
 	}
 
-	emoji := map[rune]string{}
 	var emojiFiles []os.FileInfo
 	if emojiFiles, err = ioutil.ReadDir("emoji"); err != nil {
-		return nil, fmt.Errorf("Could not open avatars directory: %v", err)
+		fmt.Errorf("Could not open avatars directory: %v", err)
 	}
 
 	for _, emojiFile := range emojiFiles {
@@ -87,24 +90,19 @@ func NewComicGen(font string) (*ComicGen, error) {
 				continue
 			}
 
-			emoji[rune(i)] = "emoji/" + name
+			defaultEmoji[rune(i)] = "emoji/" + name
 		}
 	}
 
 	draw2d.SetFontFolder("fonts")
+}
 
+// NewComicGen creates a new comic generator.
+func NewComicGen(font string) *ComicGen {
 	return &ComicGen{
-		emoji:          emoji,
-		defaultAvatars: avatars,
-		renderers: []cellRenderer{
-			&oneSpeakerCellRenderer{},
-			&flippedOneSpeakerCellRenderer{},
-			&oneSpeakerMonologueCellRenderer{},
-			&twoSpeakerCellRenderer{},
-		},
 		font:     &draw2d.FontData{font, draw2d.FontFamilySans, draw2d.FontStyleNormal},
 		glyphBuf: &truetype.GlyphBuf{},
-	}, nil
+	}
 }
 
 // Message contains a single message for a comment.
@@ -123,10 +121,10 @@ type Script struct {
 const maxComicLength = 3
 
 // MaxLines returns the maximum lines a comic can use.
-func (comic *ComicGen) MaxLines() int {
+func MaxLines() int {
 	// Determine the longest script possible
 	maxLines := 0
-	for _, renderer := range comic.renderers {
+	for _, renderer := range defaultRenderers {
 		if renderer.lines() > maxLines {
 			maxLines = renderer.lines()
 		}
@@ -136,20 +134,17 @@ func (comic *ComicGen) MaxLines() int {
 
 // MakeComic makes a comic.
 func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
-	comic.Lock()
-	defer comic.Unlock()
-
 	messages := script.Messages
 
-	maxLines := comic.MaxLines()
+	maxLines := MaxLines()
 	if len(messages) > maxLines {
 		messages = messages[len(messages)-maxLines:]
 	}
 
 	// Create all plans that are sufficient, and pick a random one.
 	plans := [][]cellRenderer{}
-	planchan := make(chan []cellRenderer, len(comic.renderers)*len(comic.renderers))
-	go createPlans(planchan, comic.renderers, maxComicLength, make([]cellRenderer, 0), messages, 0)
+	planchan := make(chan []cellRenderer, len(defaultRenderers)*len(defaultRenderers))
+	go createPlans(planchan, defaultRenderers, maxComicLength, make([]cellRenderer, 0), messages, 0)
 	for {
 		plan, ok := <-planchan
 		if !ok || plan == nil {
@@ -159,7 +154,7 @@ func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 	}
 
 	if len(plans) == 0 {
-		return nil, fmt.Errorf("No plans available to render script: %v", messages)
+		return nil, fmt.Errorf("Too much text for such a small comic.")
 	}
 	plan := plans[rand.Intn(len(plans))]
 
@@ -190,10 +185,10 @@ func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 	for _, m := range script.Messages {
 		if avatars[m.Speaker] == nil {
 			for {
-				i := rand.Intn(len(comic.defaultAvatars))
+				i := rand.Intn(len(defaultAvatars))
 				if !seen[i] {
 					seen[i] = true
-					if file, err := os.Open(comic.defaultAvatars[i]); err == nil {
+					if file, err := os.Open(defaultAvatars[i]); err == nil {
 						defer file.Close()
 						if avatar, _, err := image.Decode(bufio.NewReader(file)); err == nil {
 							avatars[m.Speaker] = avatar
@@ -345,7 +340,7 @@ func (comic *ComicGen) drawGlyph(gc *draw2dimg.GraphicContext, glyph truetype.In
 }
 
 func (comic *ComicGen) drawEmoji(gc *draw2dimg.GraphicContext, r rune, x, y, width, height float64) error {
-	if file, err := os.Open(comic.emoji[r]); err == nil {
+	if file, err := os.Open(defaultEmoji[r]); err == nil {
 		defer file.Close()
 		if emoji, _, err := image.Decode(bufio.NewReader(file)); err == nil {
 			gc.Save()
@@ -371,7 +366,7 @@ func (comic *ComicGen) createStringPath(gc *draw2dimg.GraphicContext, s string, 
 			x += fUnitsToFloat64(font.Kern(fixed.Int26_6(gc.Current.Scale), prev, index))
 		}
 
-		if comic.emoji[r] != "" {
+		if defaultEmoji[r] != "" {
 			l, t, ri, b := comic.getStringBounds(gc, string(r))
 			l -= 1
 			t -= 1
