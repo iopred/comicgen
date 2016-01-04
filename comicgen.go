@@ -22,6 +22,7 @@ import (
 	"github.com/llgcode/draw2d/draw2dimg"
 	"golang.org/x/image/draw"
 	"golang.org/x/image/font"
+	"golang.org/x/image/math/f64"
 	"golang.org/x/image/math/fixed"
 )
 
@@ -33,21 +34,53 @@ const (
 	textAlignRight
 )
 
+type Emotion int
+
+const (
+	EmotionIdle Emotion = iota
+)
+
+type Character struct {
+	FileName string
+	Name     string
+	Width    int
+	Height   int
+	Frames   int
+	Emotions map[Emotion]int
+}
+
+type Room struct {
+	FileName string
+}
+
 // ComicGen is a comic generator!
 type ComicGen struct {
 	sync.Mutex
-	current  draw.Image
 	font     *draw2d.FontData
 	glyphBuf *truetype.GlyphBuf
 }
 
 var defaultEmoji = map[rune]string{}
 var defaultAvatars = []string{}
-var defaultRenderers = []cellRenderer{
+var defaultCharacters = []*Character{}
+var defaultRooms = []*Room{}
+
+type ComicType int
+
+const (
+	ComicTypeSimple ComicType = iota
+	ComicTypeChat
+)
+
+var simpleRenderers = []cellRenderer{
 	&oneSpeakerCellRenderer{},
 	&flippedOneSpeakerCellRenderer{},
 	&oneSpeakerMonologueCellRenderer{},
 	&twoSpeakerCellRenderer{},
+}
+
+var chatRenderers = []cellRenderer{
+	&oneSpeakerChatCellRenderer{},
 }
 
 func init() {
@@ -67,7 +100,7 @@ func init() {
 
 	var emojiFiles []os.FileInfo
 	if emojiFiles, err = ioutil.ReadDir("emoji"); err != nil {
-		fmt.Errorf("Could not open avatars directory: %v", err)
+		fmt.Errorf("Could not open emoji directory: %v", err)
 	}
 
 	for _, emojiFile := range emojiFiles {
@@ -94,6 +127,42 @@ func init() {
 		}
 	}
 
+	var roomFiles []os.FileInfo
+	if roomFiles, err = ioutil.ReadDir("rooms"); err != nil {
+		fmt.Errorf("Could not open rooms directory: %v", err)
+	}
+
+	for _, characterFile := range roomFiles {
+		if characterFile.IsDir() {
+			continue
+		}
+		name := characterFile.Name()
+		defaultRooms = append(defaultRooms, &Room{
+			FileName: "rooms/" + name,
+		})
+	}
+
+	var characterFiles []os.FileInfo
+	if characterFiles, err = ioutil.ReadDir("characters"); err != nil {
+		fmt.Errorf("Could not open characters directory: %v", err)
+	}
+
+	for _, characterFile := range characterFiles {
+		if characterFile.IsDir() {
+			continue
+		}
+		name := characterFile.Name()
+		index := strings.Index(name, ".")
+		defaultCharacters = append(defaultCharacters, &Character{
+			FileName: "characters/" + name,
+			Name:     name[:index],
+			Width:    175,
+			Height:   226,
+			Frames:   12,
+			Emotions: map[Emotion]int{},
+		})
+	}
+
 	draw2d.SetFontFolder("fonts")
 }
 
@@ -113,6 +182,7 @@ type Message struct {
 
 // Script contains all the data necessary to generate a comic.
 type Script struct {
+	Type     ComicType
 	Messages []*Message
 	Avatars  map[int]string
 	Author   string
@@ -120,11 +190,20 @@ type Script struct {
 
 const maxComicLength = 3
 
+func renderersForType(ct ComicType) []cellRenderer {
+	switch ct {
+	case ComicTypeChat:
+		return chatRenderers
+	}
+	return simpleRenderers
+}
+
 // MaxLines returns the maximum lines a comic can use.
-func MaxLines() int {
+func MaxLines(ct ComicType) int {
+	r := renderersForType(ct)
 	// Determine the longest script possible
 	maxLines := 0
-	for _, renderer := range defaultRenderers {
+	for _, renderer := range r {
 		if renderer.lines() > maxLines {
 			maxLines = renderer.lines()
 		}
@@ -136,15 +215,17 @@ func MaxLines() int {
 func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 	messages := script.Messages
 
-	maxLines := MaxLines()
+	maxLines := MaxLines(script.Type)
 	if len(messages) > maxLines {
 		messages = messages[len(messages)-maxLines:]
 	}
 
+	renderers := renderersForType(script.Type)
+
 	// Create all plans that are sufficient, and pick a random one.
 	plans := [][]cellRenderer{}
-	planchan := make(chan []cellRenderer, len(defaultRenderers)*len(defaultRenderers))
-	go createPlans(planchan, defaultRenderers, maxComicLength, make([]cellRenderer, 0), messages, 0)
+	planchan := make(chan []cellRenderer, len(renderers)*len(renderers))
+	go createPlans(planchan, renderers, maxComicLength, make([]cellRenderer, 0), messages, 0)
 	for {
 		plan, ok := <-planchan
 		if !ok || plan == nil {
@@ -161,10 +242,10 @@ func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 	width := len(plan)*240 - 10
 
 	// Initialize the context.
-	comic.current = image.NewRGBA(image.Rect(0, 0, width, 225))
-	draw.Draw(comic.current, comic.current.Bounds(), image.White, image.ZP, draw.Src)
+	img := image.NewRGBA(image.Rect(0, 0, width, 225))
+	draw.Draw(img, img.Bounds(), image.White, image.ZP, draw.Src)
 
-	gc := draw2dimg.NewGraphicContext(comic.current)
+	gc := draw2dimg.NewGraphicContext(img)
 	gc.SetDPI(72)
 	gc.SetFontData(*comic.font)
 	gc.SetFont(draw2d.GetFont(*comic.font))
@@ -202,12 +283,12 @@ func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 
 	for i, c := 0, 0; i < len(plan); i++ {
 		renderer := plan[i]
-		renderer.render(comic, gc, avatars, messages[c:c+renderer.lines()], 5+240*float64(i), 5, 220, 200)
+		renderer.render(comic, img, gc, avatars, messages[c:c+renderer.lines()], 5+240*float64(i), 5, 220, 200)
 		c += renderer.lines()
 	}
 	comic.drawTextInRect(gc, color.RGBA{0xdd, 0xdd, 0xdd, 0xff}, textAlignRight, 1, fmt.Sprintf("A comic by %v.", script.Author), 3, 0, 205, float64(width), 20)
 
-	return comic.current, nil
+	return img, nil
 }
 
 func fetchAvatar(url string) (image.Image, error) {
@@ -613,7 +694,7 @@ type cellRenderer interface {
 	// If this returns a > 0 value, this renderer has said to be able to satisfy that many lines of the script.
 	// If this returns 0, this renderer cannot satisfy any lines and is unusable.
 	satisfies(messages []*Message) int
-	render(comic *ComicGen, gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64)
+	render(comic *ComicGen, img *image.RGBA, gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64)
 }
 
 type oneSpeakerCellRenderer struct{}
@@ -629,7 +710,7 @@ func (c *oneSpeakerCellRenderer) satisfies(messages []*Message) int {
 	return 0
 }
 
-func (c *oneSpeakerCellRenderer) render(comic *ComicGen, gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
+func (c *oneSpeakerCellRenderer) render(comic *ComicGen, img *image.RGBA, gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
 	outline(gc, x, y, width, height)
 
 	if len(messages) != c.lines() {
@@ -666,7 +747,7 @@ func (c *flippedOneSpeakerCellRenderer) satisfies(messages []*Message) int {
 	return 0
 }
 
-func (c *flippedOneSpeakerCellRenderer) render(comic *ComicGen, gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
+func (c *flippedOneSpeakerCellRenderer) render(comic *ComicGen, img *image.RGBA, gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
 	outline(gc, x, y, width, height)
 
 	if len(messages) != c.lines() {
@@ -703,7 +784,7 @@ func (c *twoSpeakerCellRenderer) satisfies(messages []*Message) int {
 	return 0
 }
 
-func (c *twoSpeakerCellRenderer) render(comic *ComicGen, gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
+func (c *twoSpeakerCellRenderer) render(comic *ComicGen, img *image.RGBA, gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
 	outline(gc, x, y, width, height)
 
 	if len(messages) != c.lines() {
@@ -761,7 +842,7 @@ func (c *oneSpeakerMonologueCellRenderer) satisfies(messages []*Message) int {
 	return 0
 }
 
-func (c *oneSpeakerMonologueCellRenderer) render(comic *ComicGen, gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
+func (c *oneSpeakerMonologueCellRenderer) render(comic *ComicGen, img *image.RGBA, gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
 	outline(gc, x, y, width, height)
 
 	if len(messages) != c.lines() {
@@ -798,5 +879,46 @@ func (comic *ComicGen) drawImage(gc *draw2dimg.GraphicContext, img image.Image, 
 	gc.Save()
 	gc.ComposeMatrixTransform(draw2d.NewScaleMatrix(float64(bounds.Dx())/float64(ib.Dx()), float64(bounds.Dy())/float64(ib.Dy())))
 	gc.DrawImage(img)
+	gc.Restore()
+}
+
+type oneSpeakerChatCellRenderer struct{}
+
+func (c *oneSpeakerChatCellRenderer) lines() int {
+	return 1
+}
+
+func (c *oneSpeakerChatCellRenderer) satisfies(messages []*Message) int {
+	return 1
+}
+
+func (c *oneSpeakerChatCellRenderer) render(comic *ComicGen, img *image.RGBA, gc *draw2dimg.GraphicContext, avatars map[int]image.Image, messages []*Message, x, y, width, height float64) {
+	gc.Save()
+	defer gc.Restore()
+
+	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x, y))
+
+	if len(messages) != c.lines() {
+		return
+	}
+
+	clip := image.NewRGBA(img.Bounds())
+	draw.Draw(clip, clip.Bounds(), image.Transparent, image.ZP, draw.Src)
+	draw.Draw(clip, image.Rect(int(x), int(y), int(width), int(height)), image.Opaque, image.ZP, draw.Src)
+
+	tr := draw2d.NewIdentityMatrix()
+
+	src := avatars[messages[0].Speaker]
+	draw.CatmullRom.Transform(img, f64.Aff3{tr[0], tr[1], tr[4], tr[2], tr[3], tr[5]}, src, src.Bounds(), draw.Over, &draw.Options{
+		DstMask:  clip,
+		DstMaskP: image.ZP,
+	})
+
+	color := color.Black
+	gc.BeginPath()
+	gc.SetFillColor(color)
+	rect(gc, 0, 0, width, height)
+	rect(gc, 4, 4, width-8, height-8)
+	gc.Fill()
 	gc.Restore()
 }
