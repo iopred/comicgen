@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"image/png"
 	"math/rand"
 	"os"
@@ -13,25 +14,53 @@ import (
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
-	c := comicgen.NewComicGen("arial")
+	c := comicgen.NewComicGen("arial", false)
 
-	i, _ := c.MakeComic(&comicgen.Script{
+	i, e := c.MakeComic(&comicgen.Script{
 		Messages: []*comicgen.Message{
 			{
 				Speaker: 0,
 				Text:    "Hello World!",
+				Author:  "iopred",
 			},
 			{
 				Speaker: 1,
 				Text:    "🌝",
+				Author:  "iopred",
 			},
 			{
-				Speaker: 1,
-				Text:    "Typing indicators are the best 🌝",
+				Speaker: 2,
+				Text:    "💯 1⃣",
+				Author:  "iopred",
+			},
+			{
+				Speaker: 3,
+				Text:    "SHUT YOUR MOUTH!!!",
+			},
+			{
+				Speaker: 4,
+				Text:    "This is a story all about how my life got flip-turned upside down and I liked to take a minute and sit right there and tell you how I became the prince of a town called Bel Air. Dooot DoootDooot Dooot DoootDooot DoootDooot Dooot Dooot Dooot Dooot DoootDoootDooot.",
+				Author:  "iopredaoeuaeuuaoeuaoeuaoeuaoeuaoeuaoeuaoeuoeuoeuouoeu",
+			},
+			{
+				Speaker: 5,
+				Text:    "SHUT YOUR MOUTH!!!",
+				Author:  "iopred",
+			},
+			{
+				Speaker: 6,
+				Text:    ":(",
+				Author:  "iopred aoeuaeu4 234234",
+			},
+			{
+				Speaker: 4,
+				Text:    "Hiloiopredaoeuaeuuaoeuaoeuaoeuaoeuaoeuaoeuaoeuoeuoeuouoeuiopredaoeuaeuuaoeuaoeuaoeuaoeuaoeuaoeuaoeuoeuoeuouoeuiopredaoeuaeuuaoeuaoeuaoeuaoeuaoeuaoeuaoeuoeuoeuouoeu",
+				Author:  "iopred",
 			},
 			{
 				Speaker: 0,
-				Text:    "This is a story all about how my life got flip-turned upside down and I liked to take a minute and sit right there and tell you how I became the prince of a town called Bel Air",
+				Text:    "Bilo",
+				Author:  "iopred",
 			},
 		},
 		Author: "iopred",
@@ -39,7 +68,12 @@ func main() {
 			0: "https://avatars0.githubusercontent.com/u/1529218?v=3&s=460",
 		},
 		Type: comicgen.ComicTypeChat,
+		Room: "#butts",
 	})
+	if e != nil {
+		fmt.Println(e)
+		return
+	}
 
 	f, _ := os.Create("comic.png")
 
