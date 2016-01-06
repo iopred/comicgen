@@ -1342,8 +1342,9 @@ func (c *ComicGen) drawIntro(script *Script, x, y, width, height float64) {
 
 	oy := (200 - (charcount*30.0 + 20.0)) / 2
 
+	c.gc.Save()
 	c.gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x, y+oy))
-	c.drawText(c.gc, color.Black, 16, textAlignCenter, 1, "starring", 0, 0, width, 20)
+	c.drawText(c.gc, color.Black, 16, textAlignCenter, 1, "A comic starring:", 0, 0, width, 20)
 
 	iy := 20.0
 
@@ -1358,6 +1359,6 @@ func (c *ComicGen) drawIntro(script *Script, x, y, width, height float64) {
 			break
 		}
 	}
-
-	c.drawTextInRect(c.gc, color.RGBA{0xdd, 0xdd, 0xdd, 0xff}, textAlignCenter, 1, fmt.Sprintf("A comic by %v.", script.Author), 3, 0, height-20, width, 20)
+	c.gc.Restore()
+	c.drawTextInRect(c.gc, color.RGBA{0xdd, 0xdd, 0xdd, 0xff}, textAlignCenter, 1, fmt.Sprintf("A comic by %v.", script.Author), 3, 0, height-15, width, 20)
 }
