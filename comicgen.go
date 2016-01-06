@@ -378,7 +378,7 @@ func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 	if len(plans) > 0 {
 		plan = plans[rand.Intn(len(plans))]
 	} else {
-		plan = plans[rand.Intn(len(allplans))]
+		plan = allplans[rand.Intn(len(allplans))]
 		for !ff(plan) {
 			plan = plan[1:]
 		}
@@ -694,7 +694,6 @@ func (comic *ComicGen) createStringPath(gc *draw2dimg.GraphicContext, s string, 
 		} else {
 			err := comic.drawGlyph(gc, index, x, y)
 			if err != nil {
-				log.Println(err)
 				return startx - x
 			}
 		}
@@ -1346,7 +1345,7 @@ func (c *ComicGen) drawIntro(script *Script, x, y, width, height float64) {
 	c.gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x, y+oy))
 	c.drawText(c.gc, color.Black, 16, textAlignCenter, 1, "starring", 0, 0, width, 20)
 
-	iy := oy + 20.0
+	iy := 20.0
 
 	seen = map[int]bool{}
 	for _, m := range script.Messages {
