@@ -25,17 +25,17 @@ func main() {
 			},
 			{
 				Speaker: 1,
-				Text:    "🌝",
+				Text:    "This is some text that will wrap.",
 				Author:  "iopred",
 			},
 			{
 				Speaker: 2,
-				Text:    "💯 1⃣",
+				Text:    "💯 1⃣ 🌝",
 				Author:  "iopred",
 			},
 			{
 				Speaker: 3,
-				Text:    "SHUT YOUR MOUTH!!!",
+				Text:    "SHUT YOUR MOUTH",
 			},
 			{
 				Speaker: 4,
@@ -54,12 +54,12 @@ func main() {
 			},
 			{
 				Speaker: 4,
-				Text:    "Hiloiopredaoeuaeuuaoeuaoeuaoeuaoeuaoeuaoeuaoeuoeuoeuouoeuiopredaoeuaeuuaoeuaoeuaoeuaoeuaoeuaoeuaoeuoeuoeuouoeuiopredaoeuaeuuaoeuaoeuaoeuaoeuaoeuaoeuaoeuoeuoeuouoeu",
+				Text:    "Hello",
 				Author:  "iopred",
 			},
 			{
 				Speaker: 0,
-				Text:    "Bilo",
+				Text:    "Bye",
 				Author:  "iopred",
 			},
 		},
