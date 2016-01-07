@@ -30,10 +30,17 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
-type MultiBounds [][]float64
+type MultiBounds struct {
+	AllBounds  [][]float64
+	LineHeight float64
+}
+
+func (m *MultiBounds) Length() int {
+	return len(m.AllBounds)
+}
 
 func (m *MultiBounds) Bounds() (l, t, r, b float64) {
-	for _, bound := range *m {
+	for _, bound := range m.AllBounds {
 		if bound[0] < l {
 			l = bound[0]
 		}
@@ -51,33 +58,18 @@ func (m *MultiBounds) Bounds() (l, t, r, b float64) {
 }
 
 func (m *MultiBounds) AddBound(l, t, r, b float64) {
-	*m = append(*m, []float64{l, t, r, b})
+	m.AllBounds = append(m.AllBounds, []float64{l, t, r, b})
 }
 
-func (m MultiBounds) GetBound(i int) (float64, float64, float64, float64) {
-	b := m[i]
+func (m *MultiBounds) AddStringBounds(l, t, r, b float64) {
+	y := float64(m.Length()) * m.LineHeight
+	m.AddBound(l, t+y, r, b+y)
+}
+
+func (m *MultiBounds) GetBound(i int) (float64, float64, float64, float64) {
+	b := m.AllBounds[i]
 	return b[0], b[1], b[2], b[3]
 }
-
-// func (m *MultiBounds) Height() float64 {
-// 	_, t, _, b := m.Bounds()
-// 	return b - t
-// }
-
-// func (m *MultiBounds) Width() float64 {
-// 	l, _, r, _ := m.Bounds()
-// 	return r - l
-// }
-
-// func (m *MultiBounds) X() float64 {
-// 	l, _, _, _ := m.Bounds()
-// 	return l
-// }
-
-// func (m *MultiBounds) Y() float64 {
-// 	_, t, _, _ := m.Bounds()
-// 	return t
-// }
 
 const arrowHeight float64 = 5
 
@@ -551,7 +543,7 @@ func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 		c += renderer.lines()
 	}
 	if script.Type == ComicTypeSimple {
-		comic.drawTextInRect(color.RGBA{0xdd, 0xdd, 0xdd, 0xff}, textAlignRight, 1, fmt.Sprintf("A comic by %v.", script.Author), 3, 0, float64(height)-20, float64(width), 20)
+		// comic.drawTextInRect(color.RGBA{0xdd, 0xdd, 0xdd, 0xff}, textAlignRight, 1, fmt.Sprintf("A comic by %v.", script.Author), 3, 0, float64(height)-20, float64(width), 20)
 	}
 
 	return comic.img, nil
@@ -743,10 +735,6 @@ func (comic *ComicGen) createStringPath(s string, x, y float64) {
 
 		if comic.emoji[r] != "" {
 			l, t, ri, b := comic.getStringBounds(string(r))
-			l -= 1
-			t -= 1
-			ri += 1
-			b += 1
 			comic.drawEmoji(gc, r, x+l, y+t, ri-l, b-t)
 		} else {
 			err := comic.drawGlyph(index, x, y)
@@ -789,7 +777,7 @@ func (comic *ComicGen) getStringBounds(s string) (left, top, right, bottom float
 		cursor += fUnitsToFloat64(font.HMetric(fixed.Int26_6(gc.Current.Scale), index).AdvanceWidth)
 		prev, hasPrev = index, true
 	}
-	return left, top, right, bottom
+	return
 }
 
 func (comic *ComicGen) drawTextInRect(color color.Color, align int, spacing float64, text string, border, x, y, width, height float64) {
@@ -800,6 +788,38 @@ func (comic *ComicGen) drawTextInRect(color color.Color, align int, spacing floa
 	}
 
 	comic.drawText(color, fontSize, align, spacing, wrapText, x+border, y, width-border*2, height)
+}
+
+func (comic *ComicGen) alignMultiBounds(mb *MultiBounds, align int, width, height float64) *MultiBounds {
+
+	nmb := &MultiBounds{
+		LineHeight: mb.LineHeight,
+	}
+
+	_, t, _, b := mb.Bounds()
+	textHeight := b - t
+
+	y := 0.0
+	if height != 0 {
+		y += (height - textHeight) / 2
+	}
+
+	for i := 0; i < mb.Length(); i++ {
+		l, _, r, _ := mb.GetBound(i)
+
+		textWidth := r - l
+		var x float64
+		switch align {
+		case textAlignCenter:
+			x = (width - textWidth) / 2
+		case textAlignRight:
+			x = width - textWidth
+		}
+
+		nmb.AddBound(x, y, x, y)
+	}
+
+	return nmb
 }
 
 func (comic *ComicGen) drawText(color color.Color, fontSize float64, align int, spacing float64, text string, x, y, width, height float64) *MultiBounds {
@@ -813,34 +833,18 @@ func (comic *ComicGen) drawText(color color.Color, fontSize float64, align int, 
 	gc.SetFontSize(fontSize)
 
 	mb := comic.textBounds(spacing, text)
-	_, t, _, b := mb.Bounds()
-	textHeight := b - t
 
-	top := -t + y
-	if height != 0 {
-		top += (height - textHeight) / 2
-	}
+	ox, oy, _, _ := mb.Bounds()
 
-	lineHeight := fUnitsToFloat64(gc.Current.Font.VMetric(fixed.Int26_6(gc.Current.Scale), 0).AdvanceHeight) * spacing
+	amb := comic.alignMultiBounds(mb, align, width, height)
+
+	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x-ox, y-oy))
 
 	// Draw the text.
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
-		l, _, r, _ := mb.GetBound(i)
-
-		textWidth := r - l
-		var px float64
-		switch align {
-		case textAlignLeft:
-			px = x - l
-		case textAlignCenter:
-			px = x - l + (width-textWidth)/2
-		case textAlignRight:
-			px = width - textWidth
-		}
-		py := top + lineHeight*float64(i)
-
-		comic.createStringPath(line, px, py)
+		l, t, _, _ := amb.GetBound(i)
+		comic.createStringPath(line, l, t+float64(i)*mb.LineHeight)
 		gc.Fill()
 	}
 
@@ -858,16 +862,13 @@ func pointToF64Point(p truetype.Point) (x, y float64) {
 
 func (comic *ComicGen) textBounds(spacing float64, text string) *MultiBounds {
 	gc := comic.gc
-	mb := &MultiBounds{}
+	mb := &MultiBounds{
+		LineHeight: fUnitsToFloat64(gc.Current.Font.VMetric(fixed.Int26_6(gc.Current.Scale), 0).AdvanceHeight) * spacing,
+	}
 
 	lines := strings.Split(text, "\n")
-
-	lineHeight := fUnitsToFloat64(gc.Current.Font.VMetric(fixed.Int26_6(gc.Current.Scale), 0).AdvanceHeight) * spacing
-
-	for i, line := range lines {
-		l, t, r, b := comic.getStringBounds(line)
-		b += lineHeight * float64(i) * spacing
-		mb.AddBound(l, t, r, b)
+	for _, line := range lines {
+		mb.AddStringBounds(comic.getStringBounds(line))
 	}
 	return mb
 }
@@ -892,7 +893,7 @@ func (comic *ComicGen) fitText(spacing float64, text string, width, height float
 
 		gc.SetFontSize(fontSize)
 
-		wrappedText, _ = comic.wrapText(spacing, text, width)
+		wrappedText = comic.wrapText(spacing, text, width)
 		wrapWidth, wrapHeight = comic.textSize(spacing, wrappedText)
 		newTextAspect := wrapWidth / wrapHeight
 		if newTextAspect > aspect {
@@ -913,7 +914,7 @@ func (comic *ComicGen) fitText(spacing float64, text string, width, height float
 	return
 }
 
-func (comic *ComicGen) fitTextHeight(fs float64, spacing float64, text string, width, height float64) (wrappedText string, fontSize, wrapWidth, wrapHeight float64) {
+func (comic *ComicGen) fitTextHeight(fs float64, spacing float64, text string, width, height float64) (wrappedText string, fontSize float64, mb *MultiBounds) {
 	gc := comic.gc
 	gc.Save()
 	defer gc.Restore()
@@ -923,10 +924,13 @@ func (comic *ComicGen) fitTextHeight(fs float64, spacing float64, text string, w
 	for {
 		gc.SetFontSize(fontSize)
 
-		wrappedText, _ = comic.wrapText(spacing, text, width)
-		wrapWidth, wrapHeight = comic.textSize(spacing, wrappedText)
+		wrappedText = comic.wrapText(spacing, text, width)
 
-		if wrapHeight < height && wrapWidth < width {
+		mb = comic.textBounds(spacing, wrappedText)
+
+		l, t, r, b := mb.Bounds()
+
+		if b-t < height && r-l < width {
 			break
 		}
 		fontSize--
@@ -934,7 +938,7 @@ func (comic *ComicGen) fitTextHeight(fs float64, spacing float64, text string, w
 	return
 }
 
-func (comic *ComicGen) wrapText(spacing float64, text string, wrapWidth float64) (string, float64) {
+func (comic *ComicGen) wrapText(spacing float64, text string, wrapWidth float64) string {
 	var buffer bytes.Buffer
 	var maxWidth float64
 	lines := strings.Split(text, "\n")
@@ -947,7 +951,7 @@ func (comic *ComicGen) wrapText(spacing float64, text string, wrapWidth float64)
 			buffer.WriteString("\n")
 		}
 	}
-	return buffer.String(), maxWidth
+	return buffer.String()
 }
 
 func (comic *ComicGen) wrapLine(buffer *bytes.Buffer, spacing float64, line string, wrapWidth float64) float64 {
@@ -1250,6 +1254,49 @@ func (comic *ComicGen) drawCharacter(sub *image.RGBA, message *Message, zoom flo
 	draw.CatmullRom.Transform(sub, f64.Aff3{tr[0], tr[1], tr[4], tr[2], tr[3], tr[5]}, characterimg, image.Rect(ox, oy, ox+character.Width, oy+character.Height), draw.Over, nil)
 }
 
+func (comic *ComicGen) drawComicBubble(mb *MultiBounds, amb *MultiBounds) {
+	le := mb.Length()
+	if le == 0 {
+		return
+	}
+
+	gc := comic.gc
+	gc.Save()
+	defer gc.Restore()
+
+	ox, oy, _, _ := mb.Bounds()
+	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(-ox, -oy))
+
+	bubble := &draw2d.Path{}
+
+	l, t, _, _ := mb.GetBound(0)
+	al, at, _, _ := amb.GetBound(0)
+	bubble.MoveTo(l+al, t+at)
+
+	for i := 0; i < le; i++ {
+		_, t, r, b := mb.GetBound(i)
+		al, at, _, _ := amb.GetBound(i)
+
+		bubble.LineTo(al+r, at+t)
+		bubble.LineTo(al+r, at+b)
+	}
+
+	for i := le - 1; i >= 0; i-- {
+		l, t, _, b := mb.GetBound(i)
+		al, at, _, _ := amb.GetBound(i)
+
+		bubble.LineTo(al+l, at+b)
+		bubble.LineTo(al+l, at+t)
+	}
+
+	gc.SetLineCap(draw2d.RoundCap)
+	gc.SetLineJoin(draw2d.RoundJoin)
+	gc.SetLineWidth(2)
+	gc.SetStrokeColor(color.RGBA{255, 0, 0, 255})
+	//gc.SetFillColor(color.Black)
+	gc.FillStroke(bubble)
+}
+
 func (comic *ComicGen) drawComicSpeech(message *Message, x, y, width, height, arrowx float64) float64 {
 	gc := comic.gc
 	gc.Save()
@@ -1258,24 +1305,32 @@ func (comic *ComicGen) drawComicSpeech(message *Message, x, y, width, height, ar
 	fontSize := 14.0
 	gc.SetFontSize(fontSize)
 
-	text, _ := comic.wrapText(1, message.Text, width-12)
+	text := comic.wrapText(1, message.Text, width-12)
 
 	mb := comic.textBounds(1, text)
+
 	l, t, r, b := mb.Bounds()
 
 	w := r - l
 	h := b - t
 
 	if y+h > height-chatBorder*2 || w > width-12 {
-		text, fontSize, w, h = comic.fitTextHeight(14, 1, message.Text, width-chatBorder*2, height-chatBorder*2)
+		text, fontSize, mb = comic.fitTextHeight(14, 1, message.Text, width-chatBorder*2, height-chatBorder*2)
 	}
 
 	ox := rand.Float64() * (width - (w + chatBorder)) * 0.5
-	comic.drawSpeech(1, 4, x+ox, y, w+chatBorder, h+chatBorder-2, arrowx, height)
+	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x+ox, y))
 
-	comic.drawText(color.Black, fontSize, textAlignCenter, 1, text, x+ox+3, y+3, w, 0)
+	l, t, r, b = mb.Bounds()
 
-	return -t + y + b + chatBorder
+	w = r - l
+	h = b - t
+	comic.drawSpeech(1, 4, 0, 0, w+chatBorder, h+chatBorder-2, arrowx, height)
+
+	// comic.drawComicBubble(mb, comic.alignMultiBounds(mb, textAlignCenter, w, 0))
+	comic.drawText(color.Black, fontSize, textAlignCenter, 1, text, 3, 3, w, 0)
+
+	return y + b - t + chatBorder
 }
 
 func (comic *ComicGen) drawComic(messages []*Message, x, y, width, height float64) {
@@ -1347,7 +1402,11 @@ func (comic *ComicGen) drawIntroCharacter(id int, name string, width, y float64)
 
 	characterimg := comic.characterImages[id]
 
-	wrapText, fontSize, w, h := comic.fitTextHeight(16, 1, name, width-76, 15)
+	wrapText, fontSize, mb := comic.fitTextHeight(16, 1, name, width-76, 15)
+
+	l, t, r, b := mb.Bounds()
+	w := r - l
+	h := b - t
 
 	hasAvatar := comic.avatars[id] != nil
 
