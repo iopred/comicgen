@@ -30,7 +30,7 @@ func main() {
 			},
 			{
 				Speaker: 2,
-				Text:    "💯 1⃣ 🌝",
+				Text:    "💯 🌝",
 				Author:  "iopred",
 			},
 			{

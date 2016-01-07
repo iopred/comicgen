@@ -54,25 +54,30 @@ func (m *MultiBounds) AddBound(l, t, r, b float64) {
 	*m = append(*m, []float64{l, t, r, b})
 }
 
-func (m *MultiBounds) Height() float64 {
-	_, t, _, b := m.Bounds()
-	return b - t
+func (m MultiBounds) GetBound(i int) (float64, float64, float64, float64) {
+	b := m[i]
+	return b[0], b[1], b[2], b[3]
 }
 
-func (m *MultiBounds) Width() float64 {
-	l, _, r, _ := m.Bounds()
-	return r - l
-}
+// func (m *MultiBounds) Height() float64 {
+// 	_, t, _, b := m.Bounds()
+// 	return b - t
+// }
 
-func (m *MultiBounds) X() float64 {
-	l, _, _, _ := m.Bounds()
-	return l
-}
+// func (m *MultiBounds) Width() float64 {
+// 	l, _, r, _ := m.Bounds()
+// 	return r - l
+// }
 
-func (m *MultiBounds) Y() float64 {
-	_, t, _, _ := m.Bounds()
-	return t
-}
+// func (m *MultiBounds) X() float64 {
+// 	l, _, _, _ := m.Bounds()
+// 	return l
+// }
+
+// func (m *MultiBounds) Y() float64 {
+// 	_, t, _, _ := m.Bounds()
+// 	return t
+// }
 
 const arrowHeight float64 = 5
 
@@ -691,12 +696,14 @@ func (comic *ComicGen) drawSpeech(border, radius, x, y, width, height, pointX, p
 	gc.Fill(arrow)
 }
 
-func (comic *ComicGen) loadGlyph(gc *draw2dimg.GraphicContext, glyph truetype.Index) error {
+func (comic *ComicGen) loadGlyph(glyph truetype.Index) error {
+	gc := comic.gc
 	return comic.glyphBuf.Load(gc.Current.Font, fixed.Int26_6(gc.Current.Scale), glyph, font.HintingNone)
 }
 
-func (comic *ComicGen) drawGlyph(gc *draw2dimg.GraphicContext, glyph truetype.Index, dx, dy float64) error {
-	if err := comic.loadGlyph(gc, glyph); err != nil {
+func (comic *ComicGen) drawGlyph(glyph truetype.Index, dx, dy float64) error {
+	gc := comic.gc
+	if err := comic.loadGlyph(glyph); err != nil {
 		return err
 	}
 	e0 := 0
@@ -724,9 +731,9 @@ func (comic *ComicGen) drawEmoji(gc *draw2dimg.GraphicContext, r rune, x, y, wid
 	}
 }
 
-func (comic *ComicGen) createStringPath(gc *draw2dimg.GraphicContext, s string, x, y float64) float64 {
+func (comic *ComicGen) createStringPath(s string, x, y float64) {
+	gc := comic.gc
 	font := gc.Current.Font
-	startx := x
 	prev, hasPrev := truetype.Index(0), false
 	for _, r := range s {
 		index := font.Index(r)
@@ -735,25 +742,25 @@ func (comic *ComicGen) createStringPath(gc *draw2dimg.GraphicContext, s string, 
 		}
 
 		if comic.emoji[r] != "" {
-			l, t, ri, b := comic.getStringBounds(gc, string(r))
+			l, t, ri, b := comic.getStringBounds(string(r))
 			l -= 1
 			t -= 1
 			ri += 1
 			b += 1
 			comic.drawEmoji(gc, r, x+l, y+t, ri-l, b-t)
 		} else {
-			err := comic.drawGlyph(gc, index, x, y)
+			err := comic.drawGlyph(index, x, y)
 			if err != nil {
-				return startx - x
+				return
 			}
 		}
 		x += fUnitsToFloat64(font.HMetric(fixed.Int26_6(gc.Current.Scale), index).AdvanceWidth)
 		prev, hasPrev = index, true
 	}
-	return x - startx
 }
 
-func (comic *ComicGen) getStringBounds(gc *draw2dimg.GraphicContext, s string) (left, top, right, bottom float64) {
+func (comic *ComicGen) getStringBounds(s string) (left, top, right, bottom float64) {
+	gc := comic.gc
 	font := gc.Current.Font
 	top, left, bottom, right = 10e6, 10e6, -10e6, -10e6
 	cursor := 0.0
@@ -764,7 +771,7 @@ func (comic *ComicGen) getStringBounds(gc *draw2dimg.GraphicContext, s string) (
 			cursor += fUnitsToFloat64(font.Kern(fixed.Int26_6(gc.Current.Scale), prev, index))
 		}
 
-		if err := comic.loadGlyph(gc, index); err != nil {
+		if err := comic.loadGlyph(index); err != nil {
 			log.Println(err)
 			return 0, 0, 0, 0
 		}
@@ -805,25 +812,23 @@ func (comic *ComicGen) drawText(color color.Color, fontSize float64, align int, 
 	gc.SetFillColor(color)
 	gc.SetFontSize(fontSize)
 
-	l, t, r, b := comic.textBounds(gc, spacing, text)
-
-	textHeight := -t + b
+	mb := comic.textBounds(spacing, text)
+	_, t, _, b := mb.Bounds()
+	textHeight := b - t
 
 	top := -t + y
 	if height != 0 {
 		top += (height - textHeight) / 2
 	}
 
-	mb := &MultiBounds{}
-	mb.AddBound(-l+x, -t+y, -l+x+r, -t+y+b)
-
 	lineHeight := fUnitsToFloat64(gc.Current.Font.VMetric(fixed.Int26_6(gc.Current.Scale), 0).AdvanceHeight) * spacing
 
 	// Draw the text.
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
-		l, t, r, b := comic.textBounds(gc, spacing, line)
-		textWidth := -l + r
+		l, _, r, _ := mb.GetBound(i)
+
+		textWidth := r - l
 		var px float64
 		switch align {
 		case textAlignLeft:
@@ -835,9 +840,7 @@ func (comic *ComicGen) drawText(color color.Color, fontSize float64, align int, 
 		}
 		py := top + lineHeight*float64(i)
 
-		mb.AddBound(-l+x, -t+y, -l+x+r, -t+y+b)
-
-		comic.createStringPath(gc, line, px, py)
+		comic.createStringPath(line, px, py)
 		gc.Fill()
 	}
 
@@ -853,35 +856,25 @@ func pointToF64Point(p truetype.Point) (x, y float64) {
 	return fUnitsToFloat64(p.X), -fUnitsToFloat64(p.Y)
 }
 
-func (comic *ComicGen) textBounds(gc *draw2dimg.GraphicContext, spacing float64, text string) (left, top, right, bottom float64) {
+func (comic *ComicGen) textBounds(spacing float64, text string) *MultiBounds {
+	gc := comic.gc
+	mb := &MultiBounds{}
+
 	lines := strings.Split(text, "\n")
 
 	lineHeight := fUnitsToFloat64(gc.Current.Font.VMetric(fixed.Int26_6(gc.Current.Scale), 0).AdvanceHeight) * spacing
 
 	for i, line := range lines {
-		l, t, r, b := comic.getStringBounds(gc, line)
-
-		if l < left {
-			left = l
-		}
-		if r > right {
-			right = r
-		}
-		if t < top {
-			top = t
-		}
-
+		l, t, r, b := comic.getStringBounds(line)
 		b += lineHeight * float64(i) * spacing
-		if b > bottom {
-			bottom = b
-		}
+		mb.AddBound(l, t, r, b)
 	}
-	return
+	return mb
 }
 
-func (comic *ComicGen) textSize(gc *draw2dimg.GraphicContext, spacing float64, text string) (width, height float64) {
-	left, top, right, bottom := comic.textBounds(gc, spacing, text)
-	return -left + right, -top + bottom
+func (comic *ComicGen) textSize(spacing float64, text string) (width, height float64) {
+	l, t, r, b := comic.textBounds(spacing, text).Bounds()
+	return r - l, b - t
 }
 
 func (comic *ComicGen) fitText(spacing float64, text string, width, height float64) (wrappedText string, fontSize, wrapWidth, wrapHeight float64) {
@@ -899,8 +892,8 @@ func (comic *ComicGen) fitText(spacing float64, text string, width, height float
 
 		gc.SetFontSize(fontSize)
 
-		wrappedText, _ = comic.wrapText(gc, spacing, text, width)
-		wrapWidth, wrapHeight = comic.textSize(gc, spacing, wrappedText)
+		wrappedText, _ = comic.wrapText(spacing, text, width)
+		wrapWidth, wrapHeight = comic.textSize(spacing, wrappedText)
 		newTextAspect := wrapWidth / wrapHeight
 		if newTextAspect > aspect {
 			low = fontSize
@@ -930,8 +923,8 @@ func (comic *ComicGen) fitTextHeight(fs float64, spacing float64, text string, w
 	for {
 		gc.SetFontSize(fontSize)
 
-		wrappedText, _ = comic.wrapText(gc, spacing, text, width)
-		wrapWidth, wrapHeight = comic.textSize(gc, spacing, wrappedText)
+		wrappedText, _ = comic.wrapText(spacing, text, width)
+		wrapWidth, wrapHeight = comic.textSize(spacing, wrappedText)
 
 		if wrapHeight < height && wrapWidth < width {
 			break
@@ -941,12 +934,12 @@ func (comic *ComicGen) fitTextHeight(fs float64, spacing float64, text string, w
 	return
 }
 
-func (comic *ComicGen) wrapText(gc *draw2dimg.GraphicContext, spacing float64, text string, wrapWidth float64) (string, float64) {
+func (comic *ComicGen) wrapText(spacing float64, text string, wrapWidth float64) (string, float64) {
 	var buffer bytes.Buffer
 	var maxWidth float64
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
-		width := comic.wrapLine(&buffer, gc, spacing, line, wrapWidth)
+		width := comic.wrapLine(&buffer, spacing, line, wrapWidth)
 		if width > maxWidth {
 			maxWidth = width
 		}
@@ -957,16 +950,16 @@ func (comic *ComicGen) wrapText(gc *draw2dimg.GraphicContext, spacing float64, t
 	return buffer.String(), maxWidth
 }
 
-func (comic *ComicGen) wrapLine(buffer *bytes.Buffer, gc *draw2dimg.GraphicContext, spacing float64, line string, wrapWidth float64) float64 {
+func (comic *ComicGen) wrapLine(buffer *bytes.Buffer, spacing float64, line string, wrapWidth float64) float64 {
 	var width float64
 	var runningWidth float64
 	var maxWidth float64
 	words := strings.Split(line, " ")
 	for i, word := range words {
 		if i != 0 {
-			width, _ = comic.textSize(gc, spacing, " "+word)
+			width, _ = comic.textSize(spacing, " "+word)
 		} else {
-			width, _ = comic.textSize(gc, spacing, word)
+			width, _ = comic.textSize(spacing, word)
 		}
 		if width > maxWidth {
 			maxWidth = width
@@ -1258,15 +1251,20 @@ func (comic *ComicGen) drawCharacter(sub *image.RGBA, message *Message, zoom flo
 }
 
 func (comic *ComicGen) drawComicSpeech(message *Message, x, y, width, height, arrowx float64) float64 {
-	comic.gc.Save()
-	defer comic.gc.Restore()
+	gc := comic.gc
+	gc.Save()
+	defer gc.Restore()
 
 	fontSize := 14.0
-	comic.gc.SetFontSize(fontSize)
+	gc.SetFontSize(fontSize)
 
-	text, _ := comic.wrapText(comic.gc, 1, message.Text, width-12)
+	text, _ := comic.wrapText(1, message.Text, width-12)
 
-	w, h := comic.textSize(comic.gc, 1, text)
+	mb := comic.textBounds(1, text)
+	l, t, r, b := mb.Bounds()
+
+	w := r - l
+	h := b - t
 
 	if y+h > height-chatBorder*2 || w > width-12 {
 		text, fontSize, w, h = comic.fitTextHeight(14, 1, message.Text, width-chatBorder*2, height-chatBorder*2)
@@ -1275,19 +1273,18 @@ func (comic *ComicGen) drawComicSpeech(message *Message, x, y, width, height, ar
 	ox := rand.Float64() * (width - (w + chatBorder)) * 0.5
 	comic.drawSpeech(1, 4, x+ox, y, w+chatBorder, h+chatBorder-2, arrowx, height)
 
-	mb := comic.drawText(color.Black, fontSize, textAlignCenter, 1, text, x+ox+3, y+3, w, 0)
+	comic.drawText(color.Black, fontSize, textAlignCenter, 1, text, x+ox+3, y+3, w, 0)
 
-	_, _, _, b := mb.Bounds()
-
-	return b + chatBorder
+	return -t + y + b + chatBorder
 }
 
 func (comic *ComicGen) drawComic(messages []*Message, x, y, width, height float64) {
-	comic.gc.Save()
-	defer comic.gc.Restore()
+	gc := comic.gc
+	gc.Save()
+	defer gc.Restore()
 
 	tr := draw2d.NewTranslationMatrix(x, y)
-	comic.gc.ComposeMatrixTransform(tr)
+	gc.ComposeMatrixTransform(tr)
 
 	if len(messages) < 1 || len(messages) > 2 {
 		return
@@ -1315,7 +1312,7 @@ func (comic *ComicGen) drawComic(messages []*Message, x, y, width, height float6
 		comic.drawCharacter(sub, messages[1], zoom, width/2.0, height, 1, -1)
 	}
 
-	outline(comic.gc, color.Black, 2, 2, width-4, height-4, 4)
+	outline(gc, color.Black, 2, 2, width-4, height-4, 4)
 }
 
 func (c *oneSpeakerChatCellRenderer) render(comic *ComicGen, messages []*Message, x, y, width, height float64) {
