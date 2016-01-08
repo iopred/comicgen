@@ -116,10 +116,10 @@ var emotionTriggers = map[Emotion][]string{
 	EmotionLove:     {":P", "<3", "❤️", "💛", "💙", "💜", "💔", "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟"},
 	EmotionMe:       {"me", "myself", "i'm", "i am", "im "},
 	EmotionYou:      {"you", "you're", "you are", "youre"},
-	EmotionQuestion: {"?", "what", "wat"},
+	EmotionQuestion: {"?", "what", "wat", "huh"},
 	EmotionSad:      {"-_-", ":(", "sad", "bad", "😧", "😢", "😓", "😭", "😰"},
 	EmotionScared:   {"no", "ack", "arg", "scared", "uh oh", "😱", "😳"},
-	EmotionSmug:     {"of course", "obviously", "i know"},
+	EmotionSmug:     {"of course", "obviously", "i know", "duh", "pff"},
 	EmotionYell:     {"!"},
 	EmotionWalk:     {"bye", "later"},
 }
@@ -1273,14 +1273,15 @@ func (comic *ComicGen) drawComicBubble(mb *MultiBounds, amb *MultiBounds, arrowx
 
 	shapes := []*draw2d.Path{}
 
-	size := 3.0
+	size := 5.0
+	sizeh := 3.0
 
 	for i := 0; i < mb.Length(); i++ {
 		l, t, r, b := mb.GetBound(i)
 		w := r - l
 
 		s := &draw2d.Path{}
-		draw2dkit.RoundedRectangle(s, l-size, t-size, r+size, b+size, size*4, size*4)
+		draw2dkit.RoundedRectangle(s, l-size, t-sizeh, r+size, b+sizeh, size*4, sizeh*4)
 		shapes = append(shapes, s)
 
 		divis := 40.0
@@ -1290,7 +1291,7 @@ func (comic *ComicGen) drawComicBubble(mb *MultiBounds, amb *MultiBounds, arrowx
 		for j := 0; j < int(math.Min(100, w)/divis); j++ {
 			bw := w*0.4 + rand.Float64()*w*0.6
 			s := &draw2d.Path{}
-			draw2dkit.Ellipse(s, l+bw*0.5+rand.Float64()*(w-bw), t-size*0.5+rand.Float64()*size*0.5, bw*0.5, size*0.5+rand.Float64()*size*0.5)
+			draw2dkit.Ellipse(s, l+bw*0.5+rand.Float64()*(w-bw), t-sizeh*0.5+rand.Float64()*sizeh*0.5, bw*0.5, sizeh*0.5+rand.Float64()*sizeh*0.5)
 			shapes = append(shapes, s)
 		}
 
@@ -1301,7 +1302,7 @@ func (comic *ComicGen) drawComicBubble(mb *MultiBounds, amb *MultiBounds, arrowx
 		for j := 0; j < int(math.Min(100, w)/divis); j++ {
 			bw := w*0.4 + rand.Float64()*w*0.6
 			s := &draw2d.Path{}
-			draw2dkit.Ellipse(s, l+bw*0.5+rand.Float64()*(w-bw), b+size*0.5+rand.Float64()*size*0.5, bw*0.5, size*0.5+rand.Float64()*size*0.5)
+			draw2dkit.Ellipse(s, l+bw*0.5+rand.Float64()*(w-bw), b+sizeh*0.5+rand.Float64()*sizeh*0.5, bw*0.5, sizeh*0.5+rand.Float64()*sizeh*0.5)
 			shapes = append(shapes, s)
 		}
 	}
@@ -1362,10 +1363,6 @@ func (comic *ComicGen) drawComicSpeech(message *Message, x, y, width, height, ar
 		w = r - l
 		h = b - t
 	}
-
-	//ox := rand.Float64() * (width - (w + chatBorder)) * 0.5
-
-	// ox := math.Min(width-(w+chatBorder*2), math.Max(chatBorder, arrowx-w+w*2*rand.Float64()))
 
 	ox := math.Min(width-(w+chatBorder*2), math.Max(chatBorder, arrowx-w+w*rand.Float64()))
 
