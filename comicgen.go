@@ -71,6 +71,16 @@ func (m *MultiBounds) GetBound(i int) (float64, float64, float64, float64) {
 	return b[0], b[1], b[2], b[3]
 }
 
+func (m *MultiBounds) Offset(offset *MultiBounds) *MultiBounds {
+	c := &MultiBounds{}
+
+	for i, b := range m.AllBounds {
+		c.AddBound(b[0]+offset.AllBounds[i][0], b[1]+offset.AllBounds[i][1], b[2]+offset.AllBounds[i][2], b[3]+offset.AllBounds[i][3])
+	}
+
+	return c
+}
+
 const arrowHeight float64 = 5
 
 const (
@@ -992,14 +1002,6 @@ func insetRectangleLRTB(x, y, width, height, left, right, top, bottom float64) (
 	return x + left, y + top, width - left - right, height - top - bottom
 }
 
-func rect(gc *draw2dimg.GraphicContext, x, y, width, height float64) {
-	gc.MoveTo(x, y)
-	gc.LineTo(x+width, y)
-	gc.LineTo(x+width, y+height)
-	gc.LineTo(x, y+height)
-	gc.LineTo(x, y)
-}
-
 var outlineColor = color.RGBA{0x00, 0x00, 0x00, 0x22}
 
 func outline(gc *draw2dimg.GraphicContext, color color.Color, x, y, width, height, strokewidth float64) {
@@ -1010,7 +1012,7 @@ func outline(gc *draw2dimg.GraphicContext, color color.Color, x, y, width, heigh
 	gc.SetLineJoin(draw2d.MiterJoin)
 	gc.SetLineWidth(strokewidth)
 	gc.SetStrokeColor(color)
-	rect(gc, x, y, width, height)
+	draw2dkit.Rectangle(gc, x, y, x+width, x+height)
 	gc.Stroke()
 }
 
@@ -1242,10 +1244,10 @@ func (comic *ComicGen) drawCharacter(sub *image.RGBA, message *Message, zoom flo
 	tr := draw2d.NewIdentityMatrix()
 	tr.Compose(comic.gc.Current.Tr)
 
-	mx := width - float64(character.Width)*zoom/2.0
+	mx := width - float64(character.Width)*zoom*0.5
 
-	tr.Compose(draw2d.NewTranslationMatrix(width*position+mx/2.0, height/2.0-10.0))
-	tr.Compose(draw2d.NewScaleMatrix(flip*zoom/2.0, zoom/2.0))
+	tr.Compose(draw2d.NewTranslationMatrix(width*position+mx*0.5, height*0.5-10.0))
+	tr.Compose(draw2d.NewScaleMatrix(flip*zoom*0.5, zoom*0.5))
 	tr.Compose(draw2d.NewTranslationMatrix(float64(-ox), float64(-oy)))
 	if flip == -1 {
 		tr.Compose(draw2d.NewTranslationMatrix(-float64(character.Width), 0))
@@ -1254,7 +1256,7 @@ func (comic *ComicGen) drawCharacter(sub *image.RGBA, message *Message, zoom flo
 	draw.CatmullRom.Transform(sub, f64.Aff3{tr[0], tr[1], tr[4], tr[2], tr[3], tr[5]}, characterimg, image.Rect(ox, oy, ox+character.Width, oy+character.Height), draw.Over, nil)
 }
 
-func (comic *ComicGen) drawComicBubble(mb *MultiBounds, amb *MultiBounds) {
+func (comic *ComicGen) drawComicBubble(mb *MultiBounds, amb *MultiBounds, arrowx, arrowy float64) {
 	le := mb.Length()
 	if le == 0 {
 		return
@@ -1267,34 +1269,74 @@ func (comic *ComicGen) drawComicBubble(mb *MultiBounds, amb *MultiBounds) {
 	ox, oy, _, _ := mb.Bounds()
 	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(-ox, -oy))
 
-	bubble := &draw2d.Path{}
+	mb = mb.Offset(amb)
 
-	l, t, _, _ := mb.GetBound(0)
-	al, at, _, _ := amb.GetBound(0)
-	bubble.MoveTo(l+al, t+at)
+	shapes := []*draw2d.Path{}
 
-	for i := 0; i < le; i++ {
-		_, t, r, b := mb.GetBound(i)
-		al, at, _, _ := amb.GetBound(i)
+	size := 3.0
 
-		bubble.LineTo(al+r, at+t)
-		bubble.LineTo(al+r, at+b)
+	for i := 0; i < mb.Length(); i++ {
+		l, t, r, b := mb.GetBound(i)
+		w := r - l
+
+		s := &draw2d.Path{}
+		draw2dkit.RoundedRectangle(s, l-size, t-size, r+size, b+size, size*4, size*4)
+		shapes = append(shapes, s)
+
+		divis := 40.0
+		if i == 0 {
+			divis *= 0.5
+		}
+		for j := 0; j < int(math.Min(100, w)/divis); j++ {
+			bw := w*0.4 + rand.Float64()*w*0.6
+			s := &draw2d.Path{}
+			draw2dkit.Ellipse(s, l+bw*0.5+rand.Float64()*(w-bw), t-size*0.5+rand.Float64()*size*0.5, bw*0.5, size*0.5+rand.Float64()*size*0.5)
+			shapes = append(shapes, s)
+		}
+
+		divis = 40.0
+		if i == 0 {
+			divis *= 0.5
+		}
+		for j := 0; j < int(math.Min(100, w)/divis); j++ {
+			bw := w*0.4 + rand.Float64()*w*0.6
+			s := &draw2d.Path{}
+			draw2dkit.Ellipse(s, l+bw*0.5+rand.Float64()*(w-bw), b+size*0.5+rand.Float64()*size*0.5, bw*0.5, size*0.5+rand.Float64()*size*0.5)
+			shapes = append(shapes, s)
+		}
 	}
 
-	for i := le - 1; i >= 0; i-- {
-		l, t, _, b := mb.GetBound(i)
-		al, at, _, _ := amb.GetBound(i)
+	l, _, r, b := mb.GetBound(mb.Length() - 1)
+	w := r - l
+	s := &draw2d.Path{}
 
-		bubble.LineTo(al+l, at+b)
-		bubble.LineTo(al+l, at+t)
+	al := l + 2.5 + rand.Float64()*(w-5)
+	ar := al + 5
+
+	if w < 5 {
+		al = l
+		ar = r
 	}
+
+	s.MoveTo(al, b-3)
+	s.LineTo(ar, b-3)
+	s.QuadCurveTo(ar, b-3+(arrowy-b-3)*0.75, arrowx, arrowy)
+	s.QuadCurveTo(al, b-3+(arrowy-b-3)*0.75, al, b-3)
+
+	shapes = append(shapes, s)
 
 	gc.SetLineCap(draw2d.RoundCap)
 	gc.SetLineJoin(draw2d.RoundJoin)
 	gc.SetLineWidth(2)
-	gc.SetStrokeColor(color.RGBA{255, 0, 0, 255})
-	//gc.SetFillColor(color.Black)
-	gc.FillStroke(bubble)
+	gc.SetStrokeColor(color.Black)
+	gc.SetFillColor(color.White)
+
+	for _, s := range shapes {
+		gc.FillStroke(s)
+	}
+	for _, s := range shapes {
+		gc.Fill(s)
+	}
 }
 
 func (comic *ComicGen) drawComicSpeech(message *Message, x, y, width, height, arrowx float64) float64 {
@@ -1316,21 +1358,23 @@ func (comic *ComicGen) drawComicSpeech(message *Message, x, y, width, height, ar
 
 	if y+h > height-chatBorder*2 || w > width-12 {
 		text, fontSize, mb = comic.fitTextHeight(14, 1, message.Text, width-chatBorder*2, height-chatBorder*2)
+		l, t, r, b = mb.Bounds()
+		w = r - l
+		h = b - t
 	}
 
-	ox := rand.Float64() * (width - (w + chatBorder)) * 0.5
+	//ox := rand.Float64() * (width - (w + chatBorder)) * 0.5
+
+	// ox := math.Min(width-(w+chatBorder*2), math.Max(chatBorder, arrowx-w+w*2*rand.Float64()))
+
+	ox := math.Min(width-(w+chatBorder*2), math.Max(chatBorder, arrowx-w+w*rand.Float64()))
+
 	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x+ox, y))
 
-	l, t, r, b = mb.Bounds()
+	comic.drawComicBubble(mb, comic.alignMultiBounds(mb, textAlignCenter, w, 0), arrowx-(x+ox), height-y)
+	comic.drawText(color.Black, fontSize, textAlignCenter, 1, text, 0, 0, w, 0)
 
-	w = r - l
-	h = b - t
-	comic.drawSpeech(1, 4, 0, 0, w+chatBorder, h+chatBorder-2, arrowx, height)
-
-	// comic.drawComicBubble(mb, comic.alignMultiBounds(mb, textAlignCenter, w, 0))
-	comic.drawText(color.Black, fontSize, textAlignCenter, 1, text, 3, 3, w, 0)
-
-	return y + b - t + chatBorder
+	return y + h + chatBorder
 }
 
 func (comic *ComicGen) drawComic(messages []*Message, x, y, width, height float64) {
@@ -1356,15 +1400,17 @@ func (comic *ComicGen) drawComic(messages []*Message, x, y, width, height float6
 	sub := comic.img.SubImage(image.Rect(int(x), int(y), int(x+width), int(y+height))).(*image.RGBA)
 	draw.BiLinear.Transform(sub, f64.Aff3{tr[0], tr[1], tr[4], tr[2], tr[3], tr[5]}, comic.room, rb, draw.Over, nil)
 
-	top := height/2.0 - 6
+	top := height*0.5 - 6
 
 	if len(messages) == 1 {
-		comic.drawComicSpeech(messages[0], chatBorder, chatBorder, width-chatBorder*2, top, width/2)
+		comic.drawComicSpeech(messages[0], chatBorder, chatBorder, width-chatBorder*2, top, width*0.5)
 		comic.drawCharacter(sub, messages[0], zoom, width, height, 0, 1)
 	} else {
-		comic.drawComicSpeech(messages[1], width*0.25, comic.drawComicSpeech(messages[0], chatBorder, chatBorder, width-chatBorder*2, top, width*0.25), width*0.75-chatBorder*2, top, width*0.75)
-		comic.drawCharacter(sub, messages[0], zoom, width/2.0, height, 0, 1)
-		comic.drawCharacter(sub, messages[1], zoom, width/2.0, height, 1, -1)
+		bottom := comic.drawComicSpeech(messages[0], chatBorder, chatBorder, width-chatBorder*2, top, width*0.25)
+
+		comic.drawComicSpeech(messages[1], chatBorder, bottom, width-chatBorder*2, top, width*0.75)
+		comic.drawCharacter(sub, messages[0], zoom, width*0.5, height, 0, 1)
+		comic.drawCharacter(sub, messages[1], zoom, width*0.5, height, 1, -1)
 	}
 
 	outline(gc, color.Black, 2, 2, width-4, height-4, 4)
@@ -1441,7 +1487,7 @@ func (comic *ComicGen) drawIntroCharacter(id int, name string, width, y float64)
 		gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(28, 0))
 	}
 
-	comic.drawText(color.Black, fontSize, textAlignLeft, 1, wrapText, 0, (35-h)/2, w, h)
+	comic.drawText(color.Black, fontSize, textAlignLeft, 1, wrapText, 0, (35-h)*0.5, w, h)
 }
 
 func (comic *ComicGen) drawIntro(script *Script, x, y, width, height float64) {
