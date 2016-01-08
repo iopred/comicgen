@@ -1246,7 +1246,7 @@ func (c *oneSpeakerChatCellRenderer) satisfies(messages []*Message) int {
 	return 1
 }
 
-const chatBorder = 8
+const chatBorder = 10
 
 func (comic *ComicGen) drawCharacter(sub *image.RGBA, message *Message, zoom float64, width, height, position float64, flip float64) {
 	characterimg := comic.characterImages[message.Speaker]
