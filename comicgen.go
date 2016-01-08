@@ -30,15 +30,18 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
+// MultiBounds is a struct containing bounds information for multiple lines of text.
 type MultiBounds struct {
 	AllBounds  [][]float64
 	LineHeight float64
 }
 
+// Length returns the number of lines contained in the MultiBounds.
 func (m *MultiBounds) Length() int {
 	return len(m.AllBounds)
 }
 
+// Bounds returns the total bounds of all lines.
 func (m *MultiBounds) Bounds() (l, t, r, b float64) {
 	for _, bound := range m.AllBounds {
 		if bound[0] < l {
@@ -57,20 +60,24 @@ func (m *MultiBounds) Bounds() (l, t, r, b float64) {
 	return
 }
 
+// AddBound will add a new bound.
 func (m *MultiBounds) AddBound(l, t, r, b float64) {
 	m.AllBounds = append(m.AllBounds, []float64{l, t, r, b})
 }
 
+// AddStringBounds will add a new bound and automodify the bound to be positioned on the next line.
 func (m *MultiBounds) AddStringBounds(l, t, r, b float64) {
 	y := float64(m.Length()) * m.LineHeight
 	m.AddBound(l, t+y, r, b+y)
 }
 
+// GetBound returns the bound at the desired line.
 func (m *MultiBounds) GetBound(i int) (float64, float64, float64, float64) {
 	b := m.AllBounds[i]
 	return b[0], b[1], b[2], b[3]
 }
 
+// Offset returns a new MultiBound offset by another.
 func (m *MultiBounds) Offset(offset *MultiBounds) *MultiBounds {
 	c := &MultiBounds{}
 
@@ -89,8 +96,10 @@ const (
 	textAlignRight
 )
 
+// An Emotion is a possible state for a character in a comic.
 type Emotion string
 
+// All the possible emotion states.
 const (
 	EmotionAngry    Emotion = "angry"
 	EmotionBored            = "bored"
@@ -124,6 +133,7 @@ var emotionTriggers = map[Emotion][]string{
 	EmotionWalk:     {"bye", "later"},
 }
 
+// A Character contains the information necessary to draw one character in a comic.
 type Character struct {
 	FileName string
 	Name     string
@@ -133,6 +143,7 @@ type Character struct {
 	Emotions map[Emotion][]int
 }
 
+// GetFrame will return a frame for a message. It will parse any emotion from the message and randomly select a matching frame for those emotions.
 func (c *Character) GetFrame(message string) int {
 	possible := []Emotion{}
 	for e, p := range emotionTriggers {
@@ -180,6 +191,7 @@ func (c *Character) GetFrame(message string) int {
 	return 1 + rand.Intn(c.MaxFrame()-1)
 }
 
+// MaxFrame returns the highest frame number available to the character.
 func (c *Character) MaxFrame() int {
 	m := 1
 	for _, r := range c.Emotions {
@@ -212,10 +224,13 @@ var defaultAvatars = []string{}
 var defaultCharacters = []*Character{}
 var defaultRooms = []string{}
 
+// A ComicType specifies the type of comic to create.
 type ComicType int
 
 const (
+	// ComicTypeSimple generates a comic with large text bubbles and avatars.
 	ComicTypeSimple ComicType = iota
+	// ComicTypeChat emulates Microsoft Comic Chat and creates a comic with characters and backgrounds.
 	ComicTypeChat
 )
 
@@ -234,7 +249,7 @@ var chatRenderers = []cellRenderer{
 func parseEmoji(emoji map[rune]string, path string) {
 	emojiFiles, err := ioutil.ReadDir(path)
 	if err != nil {
-		fmt.Errorf("Could not open emoji directory: %s %v", path, err)
+		fmt.Printf("Could not open emoji directory: %s %v\n", path, err)
 	}
 
 	for _, emojiFile := range emojiFiles {
@@ -281,7 +296,7 @@ func init() {
 	var avatarFiles []os.FileInfo
 	var err error
 	if avatarFiles, err = ioutil.ReadDir("avatars"); err != nil {
-		fmt.Errorf("Could not open avatars directory: %v", err)
+		fmt.Printf("Could not open avatars directory: %v\n", err)
 	}
 
 	for _, avatarFile := range avatarFiles {
@@ -296,7 +311,7 @@ func init() {
 
 	var roomFiles []os.FileInfo
 	if roomFiles, err = ioutil.ReadDir("rooms"); err != nil {
-		fmt.Errorf("Could not open rooms directory: %v", err)
+		fmt.Printf("Could not open rooms directory: %v\n", err)
 	}
 
 	for _, characterFile := range roomFiles {
@@ -309,7 +324,7 @@ func init() {
 
 	var characterFiles []os.FileInfo
 	if characterFiles, err = ioutil.ReadDir("characters"); err != nil {
-		fmt.Errorf("Could not open characters directory: %v", err)
+		fmt.Printf("Could not open characters directory: %v\n", err)
 	}
 
 	for _, characterFile := range characterFiles {
@@ -388,16 +403,16 @@ func renderersForType(ct ComicType) []cellRenderer {
 	return simpleRenderers
 }
 
-type FinishedFunc func([]cellRenderer) bool
+type finishedFunc func([]cellRenderer) bool
 
-func finishedFuncForType(ct ComicType) FinishedFunc {
+func finishedFuncForType(ct ComicType) finishedFunc {
 	switch ct {
 	case ComicTypeChat:
-		return FinishedFunc(func(currentPlan []cellRenderer) bool {
+		return finishedFunc(func(currentPlan []cellRenderer) bool {
 			return (len(currentPlan) < 4 || len(currentPlan)%3 == 2)
 		})
 	}
-	return FinishedFunc(func(currentPlan []cellRenderer) bool {
+	return finishedFunc(func(currentPlan []cellRenderer) bool {
 		return len(currentPlan) < 4 || len(currentPlan)%3 == 0
 	})
 }
@@ -553,7 +568,7 @@ func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
 		c += renderer.lines()
 	}
 	if script.Type == ComicTypeSimple {
-		// comic.drawTextInRect(color.RGBA{0xdd, 0xdd, 0xdd, 0xff}, textAlignRight, 1, fmt.Sprintf("A comic by %v.", script.Author), 3, 0, float64(height)-20, float64(width), 20)
+		comic.drawTextInRect(color.RGBA{0xdd, 0xdd, 0xdd, 0xff}, textAlignRight, 1, fmt.Sprintf("A comic by %v.", script.Author), 3, 0, float64(height)-20, float64(width), 20)
 	}
 
 	return comic.img, nil
@@ -717,20 +732,23 @@ func (comic *ComicGen) drawGlyph(glyph truetype.Index, dx, dy float64) error {
 }
 
 func (comic *ComicGen) drawEmoji(gc *draw2dimg.GraphicContext, r rune, x, y, width, height float64) error {
-	if file, err := os.Open(comic.emoji[r]); err == nil {
-		defer file.Close()
-		if emoji, _, err := image.Decode(bufio.NewReader(file)); err == nil {
-			gc.Save()
-			gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x, y))
-			comic.drawImage(emoji, image.Rectangle{image.Point{0, 0}, image.Point{int(width), int(height)}})
-			gc.Restore()
-			return nil
-		} else {
-			return err
-		}
-	} else {
+	file, err := os.Open(comic.emoji[r])
+	if err != nil {
 		return err
 	}
+	defer file.Close()
+
+	emoji, _, err := image.Decode(bufio.NewReader(file))
+	if err != nil {
+		return err
+	}
+
+	gc.Save()
+	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x, y))
+	comic.drawImage(emoji, image.Rectangle{image.Point{0, 0}, image.Point{int(width), int(height)}})
+	gc.Restore()
+
+	return nil
 }
 
 func (comic *ComicGen) createStringPath(s string, x, y float64) {
