@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -418,7 +419,13 @@ func finishedFuncForType(ct ComicType) finishedFunc {
 }
 
 // MakeComic makes a comic.
-func (comic *ComicGen) MakeComic(script *Script) (image.Image, error) {
+func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = errors.New("Error creating the comic.")
+		}
+	}()
+
 	messages := script.Messages
 
 	renderers := renderersForType(script.Type)
@@ -1246,7 +1253,7 @@ func (c *oneSpeakerChatCellRenderer) satisfies(messages []*Message) int {
 	return 1
 }
 
-const chatBorder = 10
+const chatBorder = 14
 
 func (comic *ComicGen) drawCharacter(sub *image.RGBA, message *Message, zoom float64, width, height, position float64, flip float64) {
 	characterimg := comic.characterImages[message.Speaker]
@@ -1415,7 +1422,7 @@ func (comic *ComicGen) drawComic(messages []*Message, x, y, width, height float6
 	sub := comic.img.SubImage(image.Rect(int(x), int(y), int(x+width), int(y+height))).(*image.RGBA)
 	draw.BiLinear.Transform(sub, f64.Aff3{tr[0], tr[1], tr[4], tr[2], tr[3], tr[5]}, comic.room, rb, draw.Over, nil)
 
-	top := height*0.5 - 6
+	top := height*0.5 - 18
 
 	if len(messages) == 1 {
 		comic.drawComicSpeech(messages[0], chatBorder, chatBorder, width-chatBorder*2, top, width*0.5)
