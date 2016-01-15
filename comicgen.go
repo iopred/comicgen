@@ -1253,7 +1253,7 @@ func (c *oneSpeakerChatCellRenderer) satisfies(messages []*Message) int {
 	return 1
 }
 
-const chatBorder = 14
+const chatBorder = 6
 
 func (comic *ComicGen) drawCharacter(sub *image.RGBA, message *Message, zoom float64, width, height, position float64, flip float64) {
 	characterimg := comic.characterImages[message.Speaker]
@@ -1373,7 +1373,7 @@ func (comic *ComicGen) drawComicSpeech(message *Message, x, y, width, height, ar
 	fontSize := 14.0
 	gc.SetFontSize(fontSize)
 
-	text := comic.wrapText(1, message.Text, width-12)
+	text := comic.wrapText(1, message.Text, width-chatBorder*2)
 
 	mb := comic.textBounds(1, text)
 
@@ -1382,14 +1382,14 @@ func (comic *ComicGen) drawComicSpeech(message *Message, x, y, width, height, ar
 	w := r - l
 	h := b - t
 
-	if y+h > height-chatBorder*2 || w > width-12 {
+	if y+h > height-chatBorder*2 || w > width-chatBorder*2 {
 		text, fontSize, mb = comic.fitTextHeight(14, 1, message.Text, width-chatBorder*2, height-chatBorder*2)
 		l, t, r, b = mb.Bounds()
 		w = r - l
 		h = b - t
 	}
 
-	ox := math.Min(width-(w+chatBorder*2), math.Max(chatBorder, arrowx-w+w*rand.Float64()))
+	ox := math.Min(math.Max(chatBorder, width-(w+chatBorder*2)), math.Max(chatBorder, arrowx-w+w*rand.Float64()))
 
 	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x+ox, y))
 
