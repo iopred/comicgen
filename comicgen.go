@@ -785,7 +785,7 @@ func (comic *ComicGen) createStringPath(s string, x, y float64) {
 func (comic *ComicGen) getStringBounds(s string) (left, top, right, bottom float64) {
 	gc := comic.gc
 	font := gc.Current.Font
-	top, left, bottom, right = 10e6, 10e6, -10e6, -10e6
+	top, left, bottom, right = 0, 0, 0, 0
 	cursor := 0.0
 	prev, hasPrev := truetype.Index(0), false
 	for _, rune := range s {

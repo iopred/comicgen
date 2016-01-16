@@ -35,7 +35,7 @@ func main() {
 			},
 			{
 				Speaker: 3,
-				Text:    "SHUT YOUR MOUTH",
+				Text:    "SHUT YOUR MOUTH\nBlah\n\nBlah\n",
 			},
 			{
 				Speaker: 4,
