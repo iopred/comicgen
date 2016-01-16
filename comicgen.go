@@ -422,7 +422,7 @@ func finishedFuncForType(ct ComicType) finishedFunc {
 func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = errors.New("Error creating the comic.")
+			err = errors.New("")
 		}
 	}()
 
@@ -968,6 +968,9 @@ func (comic *ComicGen) fitTextHeight(fs float64, spacing float64, text string, w
 		if b-t < height && r-l < width {
 			break
 		}
+		if fontSize == 1 {
+			break
+		}
 		fontSize--
 	}
 	return
@@ -1253,7 +1256,7 @@ func (c *oneSpeakerChatCellRenderer) satisfies(messages []*Message) int {
 	return 1
 }
 
-const chatBorder = 6
+const chatBorder = 8
 
 func (comic *ComicGen) drawCharacter(sub *image.RGBA, message *Message, zoom float64, width, height, position float64, flip float64) {
 	characterimg := comic.characterImages[message.Speaker]
