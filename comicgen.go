@@ -542,9 +542,9 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 				}
 			}
 		}
+	} else {
+		comic.room, _ = loadImage(defaultRooms[rand.Intn(len(defaultRooms))])
 	}
-
-	comic.room, _ = loadImage(defaultRooms[rand.Intn(len(defaultRooms))])
 
 	seen = map[int]bool{}
 	for _, m := range script.Messages {
