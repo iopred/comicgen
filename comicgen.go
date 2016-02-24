@@ -349,17 +349,16 @@ func init() {
 	draw2d.SetFontFolder("fonts")
 }
 
-func loadEmotions(path string) map[Emotion][]int {
-	b, err := ioutil.ReadFile(path)
+func loadEmotions(path string) (e map[Emotion][]int) {
+	e = map[Emotion][]int{}
+
+	file, err := os.Open(path)
 	if err != nil {
-		return map[Emotion][]int{}
+		return
 	}
 
-	var e map[Emotion][]int
-
-	if err := json.Unmarshal(b, &e); err != nil {
-		return map[Emotion][]int{}
-	}
+	d := json.NewDecoder(bufio.NewReader(file))
+	d.Decode(&e)
 
 	return e
 }
