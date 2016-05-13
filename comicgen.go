@@ -223,7 +223,9 @@ var googleEmoji = map[rune]string{}
 var twitterEmoji = map[rune]string{}
 var defaultAvatars = []string{}
 var defaultCharacters = []*Character{}
+var defaultCharactersMap = map[string]int{}
 var defaultRooms = []string{}
+var CharacterNames = []string{}
 
 // A ComicType specifies the type of comic to create.
 type ComicType int
@@ -250,7 +252,7 @@ var chatRenderers = []cellRenderer{
 func parseEmoji(emoji map[rune]string, path string) {
 	emojiFiles, err := ioutil.ReadDir(path)
 	if err != nil {
-		fmt.Printf("Could not open emoji directory: %s %v\n", path, err)
+		log.Printf("Could not open emoji directory: %s %v\n", path, err)
 	}
 
 	for _, emojiFile := range emojiFiles {
@@ -297,7 +299,7 @@ func init() {
 	var avatarFiles []os.FileInfo
 	var err error
 	if avatarFiles, err = ioutil.ReadDir("avatars"); err != nil {
-		fmt.Printf("Could not open avatars directory: %v\n", err)
+		log.Printf("Could not open avatars directory: %v\n", err)
 	}
 
 	for _, avatarFile := range avatarFiles {
@@ -312,7 +314,7 @@ func init() {
 
 	var roomFiles []os.FileInfo
 	if roomFiles, err = ioutil.ReadDir("rooms"); err != nil {
-		fmt.Printf("Could not open rooms directory: %v\n", err)
+		log.Printf("Could not open rooms directory: %v\n", err)
 	}
 
 	for _, characterFile := range roomFiles {
@@ -325,7 +327,7 @@ func init() {
 
 	var characterFiles []os.FileInfo
 	if characterFiles, err = ioutil.ReadDir("characters"); err != nil {
-		fmt.Printf("Could not open characters directory: %v\n", err)
+		log.Printf("Could not open characters directory: %v\n", err)
 	}
 
 	for _, characterFile := range characterFiles {
@@ -343,6 +345,8 @@ func init() {
 				Frames:   12,
 				Emotions: loadEmotions("characters/" + n + ".json"),
 			})
+			defaultCharactersMap[n] = len(defaultCharacters) - 1
+			CharacterNames = append(CharacterNames, n)
 		}
 	}
 
@@ -523,10 +527,9 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 		}
 	}
 
-	var seen map[int]bool
+	seen := map[int]bool{}
 
 	if script.Type != ComicTypeChat {
-		seen = map[int]bool{}
 		for _, m := range script.Messages {
 			if comic.avatars[m.Speaker] == nil {
 				for {
@@ -543,20 +546,42 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 		}
 	} else {
 		comic.room, _ = loadImage(defaultRooms[rand.Intn(len(defaultRooms))])
-	}
 
-	seen = map[int]bool{}
-	for _, m := range script.Messages {
-		if comic.characterImages[m.Speaker] == nil {
-			for {
-				i := rand.Intn(len(defaultCharacters))
-				if !seen[i] {
-					seen[i] = true
-					comic.characters[m.Speaker] = defaultCharacters[i]
-					if img, err := loadImage(defaultCharacters[i].FileName); err == nil {
-						comic.characterImages[m.Speaker] = img
+		for _, m := range script.Messages {
+			if m.Speaker == -1 {
+				if i, ok := defaultCharactersMap[m.Author]; ok {
+					m.Speaker = i
+					if !seen[i] {
+						seen[i] = true
+						comic.characters[m.Speaker] = defaultCharacters[i]
+						if img, err := loadImage(defaultCharacters[i].FileName); err == nil {
+							comic.characterImages[m.Speaker] = img
+						}
 					}
-					break
+				} else {
+					m.Speaker = 0
+				}
+				m.Author = ""
+			}
+		}
+
+		tried := 0
+		for _, m := range script.Messages {
+			if comic.characterImages[m.Speaker] == nil {
+				for {
+					i := rand.Intn(len(defaultCharacters))
+					if !seen[i] {
+						seen[i] = true
+						comic.characters[m.Speaker] = defaultCharacters[i]
+						if img, err := loadImage(defaultCharacters[i].FileName); err == nil {
+							comic.characterImages[m.Speaker] = img
+						}
+						break
+					}
+					tried++
+					if tried > 1000 {
+						return nil, errors.New("Too many characters.")
+					}
 				}
 			}
 		}
@@ -574,7 +599,7 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 		c += renderer.lines()
 	}
 	if script.Type == ComicTypeSimple {
-		comic.drawTextInRect(color.RGBA{0xdd, 0xdd, 0xdd, 0xff}, textAlignRight, 1, fmt.Sprintf("A comic by %v.", script.Author), 3, 0, float64(height)-20, float64(width), 20)
+		comic.drawTextInRect(color.RGBA{0xdd, 0xdd, 0xdd, 0xff}, textAlignRight, 1, fmt.Sprintf("A comic by %s.", script.Author), 3, 0, float64(height)-20, float64(width), 20)
 	}
 
 	return comic.img, nil
@@ -1551,5 +1576,5 @@ func (comic *ComicGen) drawIntro(script *Script, x, y, width, height float64) {
 		}
 	}
 	gc.Restore()
-	comic.drawTextInRect(color.RGBA{0xdd, 0xdd, 0xdd, 0xff}, textAlignCenter, 1, fmt.Sprintf("A comic by %v.", script.Author), 3, 0, height-15, width, 20)
+	comic.drawTextInRect(color.RGBA{0xdd, 0xdd, 0xdd, 0xff}, textAlignCenter, 1, fmt.Sprintf("A comic by %s.", script.Author), 3, 0, height-15, width, 20)
 }
