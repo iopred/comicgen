@@ -774,6 +774,10 @@ func (comic *ComicGen) drawEmoji(gc *draw2dimg.GraphicContext, r rune, x, y, wid
 		return err
 	}
 
+	if width > height {
+		height = width
+	}
+
 	gc.Save()
 	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x, y))
 	comic.drawImage(emoji, image.Rectangle{image.Point{0, 0}, image.Point{int(width), int(height)}})
