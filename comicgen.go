@@ -136,11 +136,11 @@ var emotionTriggers = map[Emotion][]string{
 
 // A Character contains the information necessary to draw one character in a comic.
 type Character struct {
-	FileName string
 	Name     string
 	Width    int
 	Height   int
 	Frames   int
+	Image    image.Image
 	Emotions map[Emotion][]int
 }
 
@@ -208,23 +208,22 @@ func (c *Character) MaxFrame() int {
 // ComicGen is a comic generator!
 type ComicGen struct {
 	sync.Mutex
-	font            *draw2d.FontData
-	glyphBuf        *truetype.GlyphBuf
-	img             *image.RGBA
-	gc              *draw2dimg.GraphicContext
-	avatars         map[int]image.Image
-	emoji           map[rune]string
-	room            image.Image
-	characters      map[int]*Character
-	characterImages map[int]image.Image
+	font       *draw2d.FontData
+	glyphBuf   *truetype.GlyphBuf
+	img        *image.RGBA
+	gc         *draw2dimg.GraphicContext
+	avatars    map[int]image.Image
+	emoji      map[rune]image.Image
+	room       image.Image
+	characters map[int]*Character
 }
 
-var googleEmoji = map[rune]string{}
-var twitterEmoji = map[rune]string{}
-var defaultAvatars = []string{}
+var googleEmoji = map[rune]image.Image{}
+var twitterEmoji = map[rune]image.Image{}
+var defaultAvatars = []image.Image{}
 var defaultCharacters = []*Character{}
 var defaultCharactersMap = map[string]int{}
-var defaultRooms = []string{}
+var defaultRooms = []image.Image{}
 var CharacterNames = []string{}
 
 // A ComicType specifies the type of comic to create.
@@ -249,7 +248,7 @@ var chatRenderers = []cellRenderer{
 	&twoSpeakerChatCellRenderer{},
 }
 
-func parseEmoji(emoji map[rune]string, path string) {
+func parseEmoji(emoji map[rune]image.Image, path string) {
 	emojiFiles, err := ioutil.ReadDir(path)
 	if err != nil {
 		log.Printf("Could not open emoji directory: %s %v\n", path, err)
@@ -282,7 +281,10 @@ func parseEmoji(emoji map[rune]string, path string) {
 				continue
 			}
 
-			emoji[rune(i)] = path + "/" + emojiFile.Name()
+			image, err := loadImage(path + "/" + emojiFile.Name())
+			if err == nil {
+				emoji[rune(i)] = image
+			}
 		}
 	}
 }
@@ -306,7 +308,11 @@ func init() {
 		if avatarFile.IsDir() {
 			continue
 		}
-		defaultAvatars = append(defaultAvatars, "avatars/"+avatarFile.Name())
+
+		image, err := loadImage("avatars/" + avatarFile.Name())
+		if err == nil {
+			defaultAvatars = append(defaultAvatars, image)
+		}
 	}
 
 	parseEmoji(googleEmoji, "emoji/google")
@@ -317,12 +323,14 @@ func init() {
 		log.Printf("Could not open rooms directory: %v\n", err)
 	}
 
-	for _, characterFile := range roomFiles {
-		if characterFile.IsDir() {
+	for _, roomFile := range roomFiles {
+		if roomFile.IsDir() {
 			continue
 		}
-		name := characterFile.Name()
-		defaultRooms = append(defaultRooms, "rooms/"+name)
+		image, err := loadImage("rooms/" + roomFile.Name())
+		if err == nil {
+			defaultRooms = append(defaultRooms, image)
+		}
 	}
 
 	var characterFiles []os.FileInfo
@@ -337,16 +345,19 @@ func init() {
 		name := characterFile.Name()
 		if strings.HasSuffix(name, ".png") {
 			n := name[:len(name)-4]
-			defaultCharacters = append(defaultCharacters, &Character{
-				FileName: "characters/" + name,
-				Name:     firstUpper(n),
-				Width:    161,
-				Height:   230,
-				Frames:   12,
-				Emotions: loadEmotions("characters/" + n + ".json"),
-			})
-			defaultCharactersMap[n] = len(defaultCharacters) - 1
-			CharacterNames = append(CharacterNames, n)
+			image, err := loadImage("characters/" + name)
+			if err == nil {
+				defaultCharacters = append(defaultCharacters, &Character{
+					Name:     firstUpper(n),
+					Width:    161,
+					Height:   230,
+					Frames:   12,
+					Image:    image,
+					Emotions: loadEmotions("characters/" + n + ".json"),
+				})
+				defaultCharactersMap[n] = len(defaultCharacters) - 1
+				CharacterNames = append(CharacterNames, n)
+			}
 		}
 	}
 
@@ -374,12 +385,11 @@ func NewComicGen(font string, useGooglEmoji bool) *ComicGen {
 		emoji = twitterEmoji
 	}
 	return &ComicGen{
-		font:            &draw2d.FontData{font, draw2d.FontFamilySans, draw2d.FontStyleNormal},
-		glyphBuf:        &truetype.GlyphBuf{},
-		avatars:         map[int]image.Image{},
-		emoji:           emoji,
-		characters:      map[int]*Character{},
-		characterImages: map[int]image.Image{},
+		font:       &draw2d.FontData{font, draw2d.FontFamilySans, draw2d.FontStyleNormal},
+		glyphBuf:   &truetype.GlyphBuf{},
+		avatars:    map[int]image.Image{},
+		emoji:      emoji,
+		characters: map[int]*Character{},
 	}
 }
 
@@ -536,16 +546,14 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 					i := rand.Intn(len(defaultAvatars))
 					if !seen[i] {
 						seen[i] = true
-						if img, err := loadImage(defaultAvatars[i]); err == nil {
-							comic.avatars[m.Speaker] = img
-						}
+						comic.avatars[m.Speaker] = defaultAvatars[i]
 						break
 					}
 				}
 			}
 		}
 	} else {
-		comic.room, _ = loadImage(defaultRooms[rand.Intn(len(defaultRooms))])
+		comic.room = defaultRooms[rand.Intn(len(defaultRooms))]
 
 		for _, m := range script.Messages {
 			if m.Speaker == -1 {
@@ -554,9 +562,6 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 					if !seen[i] {
 						seen[i] = true
 						comic.characters[m.Speaker] = defaultCharacters[i]
-						if img, err := loadImage(defaultCharacters[i].FileName); err == nil {
-							comic.characterImages[m.Speaker] = img
-						}
 					}
 				} else {
 					m.Speaker = 0
@@ -567,15 +572,12 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 
 		tried := 0
 		for _, m := range script.Messages {
-			if comic.characterImages[m.Speaker] == nil {
+			if comic.characters[m.Speaker] == nil {
 				for {
 					i := rand.Intn(len(defaultCharacters))
 					if !seen[i] {
 						seen[i] = true
 						comic.characters[m.Speaker] = defaultCharacters[i]
-						if img, err := loadImage(defaultCharacters[i].FileName); err == nil {
-							comic.characterImages[m.Speaker] = img
-						}
 						break
 					}
 					tried++
@@ -763,20 +765,13 @@ func (comic *ComicGen) drawGlyph(glyph truetype.Index, dx, dy float64) error {
 }
 
 func (comic *ComicGen) drawEmoji(gc *draw2dimg.GraphicContext, r rune, x, y, width, height float64) error {
-	file, err := os.Open(comic.emoji[r])
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	emoji, _, err := image.Decode(bufio.NewReader(file))
-	if err != nil {
-		return err
+	if width > height {
+		height = width
 	}
 
 	gc.Save()
 	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x, y))
-	comic.drawImage(emoji, image.Rectangle{image.Point{0, 0}, image.Point{int(width), int(height)}})
+	comic.drawImage(comic.emoji[r], image.Rectangle{image.Point{0, 0}, image.Point{int(width), int(height)}})
 	gc.Restore()
 
 	return nil
@@ -792,7 +787,7 @@ func (comic *ComicGen) createStringPath(s string, x, y float64) {
 			x += fUnitsToFloat64(font.Kern(fixed.Int26_6(gc.Current.Scale), prev, index))
 		}
 
-		if comic.emoji[r] != "" {
+		if comic.emoji[r] != nil {
 			l, t, ri, b := comic.getStringBounds(string(r))
 			comic.drawEmoji(gc, r, x+l, y+t, ri-l, b-t)
 		} else {
@@ -1283,12 +1278,11 @@ func (c *oneSpeakerChatCellRenderer) satisfies(messages []*Message) int {
 const chatBorder = 8
 
 func (comic *ComicGen) drawCharacter(sub *image.RGBA, message *Message, zoom float64, width, height, position float64, flip float64) {
-	characterimg := comic.characterImages[message.Speaker]
 	character := comic.characters[message.Speaker]
 
 	frame := character.GetFrame(message.Text)
 
-	b := characterimg.Bounds()
+	b := character.Image.Bounds()
 
 	ox := (character.Width * frame) % b.Dx()
 	oy := ((character.Width * frame) / b.Dx()) * character.Height
@@ -1305,7 +1299,7 @@ func (comic *ComicGen) drawCharacter(sub *image.RGBA, message *Message, zoom flo
 		tr.Compose(draw2d.NewTranslationMatrix(-float64(character.Width), 0))
 	}
 
-	draw.CatmullRom.Transform(sub, f64.Aff3{tr[0], tr[1], tr[4], tr[2], tr[3], tr[5]}, characterimg, image.Rect(ox, oy, ox+character.Width, oy+character.Height), draw.Over, nil)
+	draw.CatmullRom.Transform(sub, f64.Aff3{tr[0], tr[1], tr[4], tr[2], tr[3], tr[5]}, character.Image, image.Rect(ox, oy, ox+character.Width, oy+character.Height), draw.Over, nil)
 }
 
 func (comic *ComicGen) drawComicBubble(mb *MultiBounds, amb *MultiBounds, arrowx, arrowy float64) {
@@ -1495,8 +1489,6 @@ func (comic *ComicGen) drawIntroCharacter(id int, name string, width, y float64)
 		name = comic.characters[id].Name
 	}
 
-	characterimg := comic.characterImages[id]
-
 	wrapText, fontSize, mb := comic.fitTextHeight(16, 1, name, width-76, 15)
 
 	l, t, r, b := mb.Bounds()
@@ -1517,7 +1509,7 @@ func (comic *ComicGen) drawIntroCharacter(id int, name string, width, y float64)
 	gc.Save()
 	gc.ComposeMatrixTransform(draw2d.NewScaleMatrix(0.75, 0.75))
 	tr := gc.Current.Tr
-	draw.CatmullRom.Transform(comic.img, f64.Aff3{tr[0], tr[1], tr[4], tr[2], tr[3], tr[5]}, characterimg, image.Rect(3, 3, 40, 40), draw.Over, nil)
+	draw.CatmullRom.Transform(comic.img, f64.Aff3{tr[0], tr[1], tr[4], tr[2], tr[3], tr[5]}, comic.characters[id].Image, image.Rect(3, 3, 40, 40), draw.Over, nil)
 	gc.Restore()
 
 	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(32, 0))
