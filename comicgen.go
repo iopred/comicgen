@@ -556,7 +556,8 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 		// * Give a consistent speaker to author names.
 		for _, m := range script.Messages {
 			if m.Speaker == -1 {
-				if i, ok := defaultCharactersMap[m.Author]; ok {
+				lowerAuthor := strings.ToLower(m.Author)
+				if i, ok := defaultCharactersMap[lowerAuthor]; ok {
 					m.Speaker = -2 - i
 					if !seen[i] {
 						seen[i] = true
@@ -566,11 +567,11 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 						}
 					}
 					m.Author = ""
-				} else if i, ok := authorToSpeaker[m.Author]; ok {
+				} else if i, ok := authorToSpeaker[lowerAuthor]; ok {
 					m.Speaker = i
 				} else {
 					maxSpeaker++
-					authorToSpeaker[m.Author] = maxSpeaker
+					authorToSpeaker[lowerAuthor] = maxSpeaker
 					m.Speaker = maxSpeaker
 				}
 			}
