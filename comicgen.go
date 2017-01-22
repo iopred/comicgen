@@ -475,26 +475,27 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 		planLength++
 	}
 
-	planWidth := len(plan)
-	if planWidth > 3 {
-		planWidth = 3
+	planWidth := planLength
+	if planWidth > 4 {
+		planWidth = 4
 	}
-	planHeight := int(math.Ceil(float64(planLength) / float64(planWidth)))
 
-	switch script.Type {
-	case ComicTypeChat:
-		switch planLength {
+	if script.Type == ComicTypeChat {
+		switch len(plan) {
+		case 1:
 		case 2:
-			planWidth = 2
-			planHeight = 1
 		case 3:
-			planWidth = 3
-			planHeight = 1
-		case 4:
 			planWidth = 2
-			planHeight = 2
+		case 4:
+			planWidth = 3
+		default:
+			planWidth = 4
+			if len(plan)%2 == 1 || (len(plan)+1)%3 == 0 {
+				planWidth--
+			}
 		}
 	}
+	planHeight := int(math.Ceil(float64(planLength) / float64(planWidth)))
 
 	extraHeight := 0
 	if script.Type == ComicTypeSimple {

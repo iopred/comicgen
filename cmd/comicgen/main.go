@@ -48,7 +48,7 @@ func main() {
 				Author:  "iopred",
 			},
 			{
-				Speaker: -1,
+				Speaker: 6,
 				Text:    ":(",
 				Author:  "iopred aoeuaeu4 234234",
 			},
