@@ -140,7 +140,6 @@ type Character struct {
 	Name     string
 	Width    int
 	Height   int
-	Frames   int
 	Emotions map[Emotion][]int
 }
 
@@ -342,7 +341,6 @@ func init() {
 				Name:     firstUpper(n),
 				Width:    161,
 				Height:   230,
-				Frames:   12,
 				Emotions: loadEmotions("characters/" + n + ".json"),
 			})
 			defaultCharactersMap[n] = len(defaultCharacters) - 1
@@ -547,10 +545,21 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 	} else {
 		comic.room, _ = loadImage(defaultRooms[rand.Intn(len(defaultRooms))])
 
+		maxSpeaker := 0
+		for _, m := range script.Messages {
+			if m.Speaker != -1 && m.Speaker > maxSpeaker {
+				maxSpeaker = m.Speaker
+			}
+		}
+
+		authorToSpeaker := map[string]int{}
+		// Give messages without a valid speaker a valid one:
+		// * Try to match the character with author name.
+		// * Give a consistent speaker to author names.
 		for _, m := range script.Messages {
 			if m.Speaker == -1 {
 				if i, ok := defaultCharactersMap[m.Author]; ok {
-					m.Speaker = i
+					m.Speaker = -2 - i
 					if !seen[i] {
 						seen[i] = true
 						comic.characters[m.Speaker] = defaultCharacters[i]
@@ -558,10 +567,14 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 							comic.characterImages[m.Speaker] = img
 						}
 					}
+					m.Author = ""
+				} else if i, ok := authorToSpeaker[m.Author]; ok {
+					m.Speaker = i
 				} else {
-					m.Speaker = 0
+					maxSpeaker++
+					authorToSpeaker[m.Author] = maxSpeaker
+					m.Speaker = maxSpeaker
 				}
-				m.Author = ""
 			}
 		}
 
@@ -570,18 +583,19 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 			if comic.characterImages[m.Speaker] == nil {
 				for {
 					i := rand.Intn(len(defaultCharacters))
-					if !seen[i] {
-						seen[i] = true
-						comic.characters[m.Speaker] = defaultCharacters[i]
-						if img, err := loadImage(defaultCharacters[i].FileName); err == nil {
-							comic.characterImages[m.Speaker] = img
+					if seen[i] {
+						tried++
+						if tried > 1000 {
+							return nil, errors.New("Too many characters.")
 						}
-						break
+						continue
 					}
-					tried++
-					if tried > 1000 {
-						return nil, errors.New("Too many characters.")
+					seen[i] = true
+					comic.characters[m.Speaker] = defaultCharacters[i]
+					if img, err := loadImage(defaultCharacters[i].FileName); err == nil {
+						comic.characterImages[m.Speaker] = img
 					}
+					break
 				}
 			}
 		}

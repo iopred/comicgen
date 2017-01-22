@@ -48,17 +48,17 @@ func main() {
 				Author:  "iopred",
 			},
 			{
-				Speaker: 6,
+				Speaker: -1,
 				Text:    ":(",
 				Author:  "iopred aoeuaeu4 234234",
 			},
 			{
-				Speaker: 4,
+				Speaker: -1,
 				Text:    "Hello",
 				Author:  "iopred",
 			},
 			{
-				Speaker: 0,
+				Speaker: -1,
 				Text:    "Bye",
 				Author:  "iopred",
 			},
