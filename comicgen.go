@@ -458,12 +458,6 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 		plan = plans[rand.Intn(len(plans))]
 	} else {
 		plan = allplans[rand.Intn(len(allplans))]
-		for !ff(plan) {
-			plan = plan[1:]
-		}
-		if len(plan) == 0 {
-			return nil, fmt.Errorf("Too much text for such a small comic.")
-		}
 	}
 
 	cellWidth := 200
@@ -476,26 +470,29 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 		cellBorder = 5
 	}
 
+	planLength := len(plan)
+	if script.Type == ComicTypeChat {
+		planLength++
+	}
+
 	planWidth := len(plan)
-	if planWidth > 4 {
+	if planWidth > 3 {
 		planWidth = 3
 	}
-	planHeight := int(math.Ceil(float64(len(plan)) / float64(planWidth)))
+	planHeight := int(math.Ceil(float64(planLength) / float64(planWidth)))
 
-	if len(plan) < 5 {
-		switch script.Type {
-		case ComicTypeChat:
-			switch len(plan) {
-			case 1:
-				planWidth = 2
-				planHeight = 1
-			case 2:
-				planWidth = 3
-				planHeight = 1
-			case 3:
-				planWidth = 2
-				planHeight = 2
-			}
+	switch script.Type {
+	case ComicTypeChat:
+		switch planLength {
+		case 2:
+			planWidth = 2
+			planHeight = 1
+		case 3:
+			planWidth = 3
+			planHeight = 1
+		case 4:
+			planWidth = 2
+			planHeight = 2
 		}
 	}
 
@@ -603,8 +600,8 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 
 	offset := 0
 	if script.Type == ComicTypeChat {
-		comic.drawIntro(script, 5, 5, float64(cellWidth), float64(cellHeight))
-		offset = 1
+		offset = planWidth*planHeight - len(plan)
+		comic.drawIntro(script, 5, 5, float64(cellWidth*offset), float64(cellHeight))
 	}
 
 	for i, c := 0, 0; i < len(plan); i++ {
