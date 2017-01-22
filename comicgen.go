@@ -415,7 +415,7 @@ func finishedFuncForType(ct ComicType) finishedFunc {
 		})
 	}
 	return finishedFunc(func(currentPlan []cellRenderer) bool {
-		return len(currentPlan) < 4 || len(currentPlan)%3 == 0
+		return len(currentPlan) < 4 || len(currentPlan)%3 == 0 || len(currentPlan)%4 == 0
 	})
 }
 
@@ -477,7 +477,7 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 
 	planWidth := planLength
 	if planWidth > 4 {
-		planWidth = 4
+		planWidth = 3
 	}
 
 	if script.Type == ComicTypeChat {
@@ -1080,7 +1080,7 @@ func outline(gc *draw2dimg.GraphicContext, color color.Color, x, y, width, heigh
 	gc.SetLineJoin(draw2d.MiterJoin)
 	gc.SetLineWidth(strokewidth)
 	gc.SetStrokeColor(color)
-	draw2dkit.Rectangle(gc, x, y, x+width, x+height)
+	draw2dkit.Rectangle(gc, x, y, x+width, y+height)
 	gc.Stroke()
 }
 
