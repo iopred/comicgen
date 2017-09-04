@@ -28,7 +28,7 @@ func main() {
 				Text:    "This is some text replacement that will wrap.",
 				Author:  "iopred",
 				Replacements: map[string]string{
-					"replacement": "https://cdn.discordapp.com/emojis/310096452028203008.png",
+					"replacement": "https://cdn.discordapp.com/emojis/230322831303507968.png",
 				},
 			},
 			{
@@ -45,7 +45,7 @@ func main() {
 				Text:    "This replacement ass is a story all about how my life got flip-turned upside down and I liked to take a minute and sit right there and tell you how I became the prince of a town called Bel Air. Dooot DoootDooot Dooot DoootDooot DoootDooot Dooot Dooot Dooot Dooot DoootDoootDooot.",
 				Author:  "iopredaoeuaeuuaoeuaoeuaoeuaoeuaoeuaoeuaoeuoeuoeuouoeu",
 				Replacements: map[string]string{
-					"replacement": "https://cdn.discordapp.com/emojis/310096452028203008.png",
+					"replacement": "https://cdn.discordapp.com/emojis/230322831303507968.png",
 					"ass":         "https://cdn.discordapp.com/emojis/243513506358362112.png",
 				},
 			},

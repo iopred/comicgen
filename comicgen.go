@@ -835,12 +835,19 @@ func (comic *ComicGen) createStringPath(s string, x, y float64) {
 				img := comic.replacements[index]
 				if img != nil {
 					l, t, ri, b := comic.getStringBounds(string(r))
+
 					w := ri - l
 					h := b - t
 					max := math.Max(w, h)
+
+					imgBounds := img.Bounds()
+					imgWidth := float64(imgBounds.Dx())
+					imgHeight := float64(imgBounds.Dy())
+					scale := math.Min(max/imgWidth, max/imgHeight)
+
 					gc.Save()
-					gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x+l, y+t))
-					comic.drawImage(img, image.Rectangle{image.Point{0, 0}, image.Point{int(max), int(max)}})
+					gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x+l+((max-imgWidth*scale)/2), y+t+((max-imgHeight*scale)/2)))
+					comic.drawImage(img, image.Rectangle{image.Point{0, 0}, image.Point{int(imgWidth * scale), int(imgHeight * scale)}})
 					gc.Restore()
 				}
 			}
