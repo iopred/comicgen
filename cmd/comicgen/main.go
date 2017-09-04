@@ -25,8 +25,11 @@ func main() {
 			},
 			{
 				Speaker: 1,
-				Text:    "This is some text that will wrap.",
+				Text:    "This is some text replacement that will wrap.",
 				Author:  "iopred",
+				Replacements: map[string]string{
+					"replacement": "https://cdn.discordapp.com/emojis/310096452028203008.png",
+				},
 			},
 			{
 				Speaker: 2,
@@ -39,8 +42,12 @@ func main() {
 			},
 			{
 				Speaker: 4,
-				Text:    "This is a story all about how my life got flip-turned upside down and I liked to take a minute and sit right there and tell you how I became the prince of a town called Bel Air. Dooot DoootDooot Dooot DoootDooot DoootDooot Dooot Dooot Dooot Dooot DoootDoootDooot.",
+				Text:    "This replacement ass is a story all about how my life got flip-turned upside down and I liked to take a minute and sit right there and tell you how I became the prince of a town called Bel Air. Dooot DoootDooot Dooot DoootDooot DoootDooot Dooot Dooot Dooot Dooot DoootDoootDooot.",
 				Author:  "iopredaoeuaeuuaoeuaoeuaoeuaoeuaoeuaoeuaoeuoeuoeuouoeu",
+				Replacements: map[string]string{
+					"replacement": "https://cdn.discordapp.com/emojis/310096452028203008.png",
+					"ass":         "https://cdn.discordapp.com/emojis/243513506358362112.png",
+				},
 			},
 			{
 				Speaker: 5,
@@ -71,7 +78,7 @@ func main() {
 		Room: "#butts",
 	})
 	if e != nil {
-		fmt.Println(e)
+		fmt.Println("Error: ", e)
 		return
 	}
 

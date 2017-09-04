@@ -216,6 +216,7 @@ type ComicGen struct {
 	room            image.Image
 	characters      map[int]*Character
 	characterImages map[int]image.Image
+	replacements    []image.Image
 }
 
 var googleEmoji = map[rune]string{}
@@ -375,6 +376,7 @@ func NewComicGen(font string, useGooglEmoji bool) *ComicGen {
 		font:            &draw2d.FontData{font, draw2d.FontFamilySans, draw2d.FontStyleNormal},
 		glyphBuf:        &truetype.GlyphBuf{},
 		avatars:         map[int]image.Image{},
+		replacements:    []image.Image{},
 		emoji:           emoji,
 		characters:      map[int]*Character{},
 		characterImages: map[int]image.Image{},
@@ -383,10 +385,14 @@ func NewComicGen(font string, useGooglEmoji bool) *ComicGen {
 
 // Message contains a single message for a comment.
 type Message struct {
-	Speaker int
-	Text    string
-	Author  string
+	Speaker      int
+	Text         string
+	textReplaced string
+	Author       string
+	Replacements map[string]string
 }
+
+const ReplacementUnicode = 0xF0000
 
 // Script contains all the data necessary to generate a comic.
 type Script struct {
@@ -516,10 +522,27 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 
 	for i, url := range script.Avatars {
 		if url != "" {
-			image, err := fetchAvatar(url)
+			image, err := fetchImage(url)
 			if err == nil {
 				comic.avatars[i] = image
 			}
+		}
+	}
+
+	replacementIndexes := map[string]int{}
+
+	for _, message := range script.Messages {
+		message.textReplaced = message.Text
+		for replacement, url := range message.Replacements {
+			var index int
+			var ok bool
+			if index, ok = replacementIndexes[replacement]; !ok {
+				index = len(comic.replacements)
+				replacementIndexes[replacement] = index
+				image, _ := fetchImage(url)
+				comic.replacements = append(comic.replacements, image)
+			}
+			message.textReplaced = strings.Join(strings.Split(message.textReplaced, replacement), string(rune(ReplacementUnicode+index)))
 		}
 	}
 
@@ -633,7 +656,7 @@ func loadImage(path string) (image.Image, error) {
 	return img, nil
 }
 
-func fetchAvatar(url string) (image.Image, error) {
+func fetchImage(url string) (image.Image, error) {
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
@@ -787,13 +810,10 @@ func (comic *ComicGen) drawEmoji(gc *draw2dimg.GraphicContext, r rune, x, y, wid
 		return err
 	}
 
-	if width > height {
-		height = width
-	}
-
 	gc.Save()
 	gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x, y))
-	comic.drawImage(emoji, image.Rectangle{image.Point{0, 0}, image.Point{int(width), int(height)}})
+	max := math.Max(width, height)
+	comic.drawImage(emoji, image.Rectangle{image.Point{0, 0}, image.Point{int(max), int(max)}})
 	gc.Restore()
 
 	return nil
@@ -809,7 +829,22 @@ func (comic *ComicGen) createStringPath(s string, x, y float64) {
 			x += fUnitsToFloat64(font.Kern(fixed.Int26_6(gc.Current.Scale), prev, index))
 		}
 
-		if comic.emoji[r] != "" {
+		if int(r) >= ReplacementUnicode {
+			index := int(r) - ReplacementUnicode
+			if index < len(comic.replacements) {
+				img := comic.replacements[index]
+				if img != nil {
+					l, t, ri, b := comic.getStringBounds(string(r))
+					w := ri - l
+					h := b - t
+					max := math.Max(w, h)
+					gc.Save()
+					gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x+l, y+t))
+					comic.drawImage(img, image.Rectangle{image.Point{0, 0}, image.Point{int(max), int(max)}})
+					gc.Restore()
+				}
+			}
+		} else if comic.emoji[r] != "" {
 			l, t, ri, b := comic.getStringBounds(string(r))
 			comic.drawEmoji(gc, r, x+l, y+t, ri-l, b-t)
 		} else {
@@ -836,7 +871,6 @@ func (comic *ComicGen) getStringBounds(s string) (left, top, right, bottom float
 		}
 
 		if err := comic.loadGlyph(index); err != nil {
-			log.Println(err)
 			return 0, 0, 0, 0
 		}
 		e0 := 0
@@ -1128,7 +1162,7 @@ func (c *oneSpeakerCellRenderer) render(comic *ComicGen, messages []*Message, x,
 	bX, bY, bWidth, bHeight := insetRectangleLRTB(x, y, width, height, border, border, border, border+float64(bounds.Dy())+arrowHeight*2)
 
 	comic.drawSpeech(2, border, bX, bY, bWidth, bHeight, bX+rand.Float64()*float64(bounds.Dx()), bY+bHeight+arrowHeight)
-	comic.drawTextInRect(image.Black, textAlignCenter, 1, string(messages[0].Text), arrowHeight, bX, bY, bWidth, bHeight)
+	comic.drawTextInRect(image.Black, textAlignCenter, 1, messages[0].textReplaced, arrowHeight, bX, bY, bWidth, bHeight)
 }
 
 type flippedOneSpeakerCellRenderer struct{}
@@ -1165,7 +1199,7 @@ func (c *flippedOneSpeakerCellRenderer) render(comic *ComicGen, messages []*Mess
 	bX, bY, bWidth, bHeight := insetRectangleLRTB(x, y, width, height, border, border, border+float64(bounds.Dy())+arrowHeight*2, border)
 
 	comic.drawSpeech(2, border, bX, bY, bWidth, bHeight, bX+rand.Float64()*float64(bounds.Dx()), bY-arrowHeight)
-	comic.drawTextInRect(image.Black, textAlignCenter, 1, string(messages[0].Text), arrowHeight, bX, bY, bWidth, bHeight)
+	comic.drawTextInRect(image.Black, textAlignCenter, 1, messages[0].textReplaced, arrowHeight, bX, bY, bWidth, bHeight)
 }
 
 type twoSpeakerCellRenderer struct{}
@@ -1222,7 +1256,7 @@ func (c *twoSpeakerCellRenderer) render(comic *ComicGen, messages []*Message, x,
 		}
 
 		comic.drawSpeech(2, border, bX, bY, bWidth, bHeight, bX+arrowX, bY+rand.Float64()*float64(bounds.Dx()))
-		comic.drawTextInRect(image.Black, textAlignCenter, 1, string(messages[i].Text), 10, bX, bY, bWidth, bHeight)
+		comic.drawTextInRect(image.Black, textAlignCenter, 1, messages[i].textReplaced, 10, bX, bY, bWidth, bHeight)
 
 		flipped = !flipped
 		aY += aHeight
@@ -1266,12 +1300,12 @@ func (c *oneSpeakerMonologueCellRenderer) render(comic *ComicGen, messages []*Me
 	bX, bY, bWidth, bHeight := insetRectangleLRTB(x, y, width, height, border, border, border, border+float64(bounds.Dy())+arrowHeight*2)
 
 	comic.drawSpeech(2, border, bX, bY, bWidth, bHeight, bX+rand.Float64()*float64(bounds.Dx()), bY+bHeight+arrowHeight)
-	comic.drawTextInRect(image.Black, textAlignCenter, 1, string(messages[0].Text), arrowHeight, bX, bY, bWidth, bHeight)
+	comic.drawTextInRect(image.Black, textAlignCenter, 1, messages[0].textReplaced, arrowHeight, bX, bY, bWidth, bHeight)
 
 	bX, bY, bWidth, bHeight = insetRectangleLRTB(x, y, width, height, border+float64(bounds.Dx())+arrowHeight*3, border, height-border*2-float64(bounds.Dy()), border)
 
 	comic.drawSpeech(2, border, bX, bY, bWidth, bHeight, bX-arrowHeight*2, bY+rand.Float64()*float64(bounds.Dy()))
-	comic.drawTextInRect(image.Black, textAlignCenter, 1, string(messages[1].Text), arrowHeight, bX, bY, bWidth, bHeight)
+	comic.drawTextInRect(image.Black, textAlignCenter, 1, messages[1].textReplaced, arrowHeight, bX, bY, bWidth, bHeight)
 }
 
 func (comic *ComicGen) drawImage(img image.Image, bounds image.Rectangle) {
@@ -1303,7 +1337,7 @@ func (comic *ComicGen) drawCharacter(sub *image.RGBA, message *Message, zoom flo
 	characterimg := comic.characterImages[message.Speaker]
 	character := comic.characters[message.Speaker]
 
-	frame := character.GetFrame(message.Text)
+	frame := character.GetFrame(message.textReplaced)
 
 	b := characterimg.Bounds()
 
@@ -1417,7 +1451,7 @@ func (comic *ComicGen) drawComicSpeech(message *Message, x, y, width, height, ar
 	fontSize := 14.0
 	gc.SetFontSize(fontSize)
 
-	text := comic.wrapText(1, message.Text, width-chatBorder*2)
+	text := comic.wrapText(1, message.textReplaced, width-chatBorder*2)
 
 	mb := comic.textBounds(1, text)
 
@@ -1427,7 +1461,7 @@ func (comic *ComicGen) drawComicSpeech(message *Message, x, y, width, height, ar
 	h := b - t
 
 	if y+h > height-chatBorder*2 || w > width-chatBorder*2 {
-		text, fontSize, mb = comic.fitTextHeight(14, 1, message.Text, width-chatBorder*2, height-chatBorder*2)
+		text, fontSize, mb = comic.fitTextHeight(14, 1, message.textReplaced, width-chatBorder*2, height-chatBorder*2)
 		l, t, r, b = mb.Bounds()
 		w = r - l
 		h = b - t
