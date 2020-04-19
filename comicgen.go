@@ -217,6 +217,7 @@ type ComicGen struct {
 	characters      map[int]*Character
 	characterImages map[int]image.Image
 	replacements    []image.Image
+	images			map[string]image.Image
 }
 
 var googleEmoji = map[rune]string{}
@@ -380,6 +381,7 @@ func NewComicGen(font string, useGooglEmoji bool) *ComicGen {
 		emoji:           emoji,
 		characters:      map[int]*Character{},
 		characterImages: map[int]image.Image{},
+		images:			 map[string]image.Image{},
 	}
 }
 
@@ -390,6 +392,7 @@ type Message struct {
 	textReplaced string
 	Author       string
 	Replacements map[string]string
+	ImageUrl	 string
 }
 
 const ReplacementUnicode = 0xF0000
@@ -544,6 +547,10 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 			}
 			message.textReplaced = strings.Join(strings.Split(message.textReplaced, replacement), string(rune(ReplacementUnicode+index)))
 		}
+		if message.ImageUrl != "" && comic.images[message.ImageUrl] == nil {
+			image, _ := fetchImage(message.ImageUrl)
+			comic.images[message.ImageUrl] = image
+		}
 	}
 
 	seen := map[int]bool{}
@@ -564,7 +571,13 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 			}
 		}
 	} else {
-		comic.room, _ = loadImage(defaultRooms[rand.Intn(len(defaultRooms))])
+		if script.Room != "" {
+			comic.room, _ = loadImage(script.Room)
+		}
+
+		if comic.room == nil {
+			comic.room, _ = loadImage(defaultRooms[rand.Intn(len(defaultRooms))])
+		}
 
 		maxSpeaker := 0
 		for _, m := range script.Messages {
@@ -1455,6 +1468,32 @@ func (comic *ComicGen) drawComicSpeech(message *Message, x, y, width, height, ar
 	gc.Save()
 	defer gc.Restore()
 
+	if message.ImageUrl != ""{
+		gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x, y))
+
+		img := comic.images[message.ImageUrl]
+
+		imgb := img.Bounds()
+
+		iw := float64(imgb.Dx())
+		ih := float64(imgb.Dy())
+		aspect := iw / ih
+		if ih > height {
+			ih = height
+			iw = height * aspect
+		}
+		if iw > width {
+			iw = width
+			ih = width * aspect 
+		}
+
+		pos := image.Rectangle{image.Point{0, 0}, image.Point{int(iw), int(ih)}}
+
+		gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix((width - iw) / 2, (height - ih) / 2))
+		comic.drawImage(img, pos)
+		return y + height + chatBorder
+	}
+
 	fontSize := 14.0
 	gc.SetFontSize(fontSize)
 
@@ -1534,6 +1573,9 @@ func (c *twoSpeakerChatCellRenderer) lines() int {
 }
 
 func (c *twoSpeakerChatCellRenderer) satisfies(messages []*Message) int {
+	if messages[0].ImageUrl != "" || messages[1].ImageUrl != "" {
+		return 0
+	}
 	if len(messages) > 1 && countSpeakers(messages[:c.lines()]) == 2 && len(messages[0].Text) < 128 && len(messages[1].Text) < 128 {
 		return 2
 	}
