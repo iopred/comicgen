@@ -1484,7 +1484,7 @@ func (comic *ComicGen) drawComicSpeech(message *Message, x, y, width, height, ar
 		}
 		if iw > width {
 			iw = width
-			ih = width * aspect 
+			ih = width / aspect
 		}
 
 		pos := image.Rectangle{image.Point{0, 0}, image.Point{int(iw), int(ih)}}
