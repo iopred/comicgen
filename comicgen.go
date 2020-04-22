@@ -217,7 +217,7 @@ type ComicGen struct {
 	characters      map[int]*Character
 	characterImages map[int]image.Image
 	replacements    []image.Image
-	images			map[string]image.Image
+	images          map[string]image.Image
 }
 
 var googleEmoji = map[rune]string{}
@@ -381,7 +381,7 @@ func NewComicGen(font string, useGooglEmoji bool) *ComicGen {
 		emoji:           emoji,
 		characters:      map[int]*Character{},
 		characterImages: map[int]image.Image{},
-		images:			 map[string]image.Image{},
+		images:          map[string]image.Image{},
 	}
 }
 
@@ -392,7 +392,7 @@ type Message struct {
 	textReplaced string
 	Author       string
 	Replacements map[string]string
-	ImageUrl	 string
+	ImageUrl     string
 }
 
 const ReplacementUnicode = 0xF0000
@@ -1468,7 +1468,7 @@ func (comic *ComicGen) drawComicSpeech(message *Message, x, y, width, height, ar
 	gc.Save()
 	defer gc.Restore()
 
-	if message.ImageUrl != ""{
+	if message.ImageUrl != "" {
 		gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix(x, y))
 
 		img := comic.images[message.ImageUrl]
@@ -1489,9 +1489,16 @@ func (comic *ComicGen) drawComicSpeech(message *Message, x, y, width, height, ar
 
 		pos := image.Rectangle{image.Point{0, 0}, image.Point{int(iw), int(ih)}}
 
-		gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix((width - iw) / 2, (height - ih) / 2))
+		gc.ComposeMatrixTransform(draw2d.NewTranslationMatrix((width-iw)/2, (height-ih)/2))
 		comic.drawImage(img, pos)
-		return y + height + chatBorder
+
+		if message.Text == "" {
+			return y + height + chatBorder
+		} else {
+			y += height / 2
+			gc.Restore()
+			gc.Save()
+		}
 	}
 
 	fontSize := 14.0
