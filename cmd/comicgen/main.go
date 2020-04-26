@@ -74,11 +74,11 @@ func main() {
 		Avatars: map[int]string{
 			0: "https://avatars0.githubusercontent.com/u/1529218?v=3&s=460",
 		},
-		Type: comicgen.ComicTypeChat,
+		Type: comicgen.ComicTypeSimple,
 		Room: "#butts",
 	})
 	if e != nil {
-		fmt.Println("Error: ", e)
+		fmt.Println("Error %s", e)
 		return
 	}
 

@@ -414,20 +414,6 @@ func renderersForType(ct ComicType) []cellRenderer {
 	return simpleRenderers
 }
 
-type finishedFunc func([]cellRenderer) bool
-
-func finishedFuncForType(ct ComicType) finishedFunc {
-	switch ct {
-	case ComicTypeChat:
-		return finishedFunc(func(currentPlan []cellRenderer) bool {
-			return (len(currentPlan) < 4 || len(currentPlan)%3 == 2)
-		})
-	}
-	return finishedFunc(func(currentPlan []cellRenderer) bool {
-		return len(currentPlan) < 4 || len(currentPlan)%3 == 0 || len(currentPlan)%4 == 0
-	})
-}
-
 // MakeComic makes a comic.
 func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 	defer func() {
@@ -440,33 +426,39 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 
 	renderers := renderersForType(script.Type)
 
-	// Create all plans that are sufficient, and pick a random one.
-	plans := [][]cellRenderer{}
-	allplans := [][]cellRenderer{}
-
-	ff := finishedFuncForType(script.Type)
-
-	planchan := make(chan []cellRenderer, len(messages)*len(messages))
-	go createPlans(planchan, renderers, make([]cellRenderer, 0), messages, 0)
-	for {
-		plan := <-planchan
-		if plan == nil {
-			break
-		}
-		if ff(plan) {
-			plans = append(plans, plan)
-		}
-		allplans = append(allplans, plan)
-	}
-
-	if len(plans) == 0 && len(allplans) == 0 {
-		return nil, fmt.Errorf("Too much text for such a small comic.")
-	}
 	var plan []cellRenderer
-	if len(plans) > 0 {
-		plan = plans[rand.Intn(len(plans))]
-	} else {
-		plan = allplans[rand.Intn(len(allplans))]
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("Not enough messages!")
+	}
+
+	maxLines := 0
+	for _, r := range renderers {
+		if r.lines() > maxLines {
+			maxLines = r.lines()
+		}
+	}
+
+	var possible []cellRenderer = make([]cellRenderer, 0, len(renderers))
+	plan = plan[:0]
+	for i := 0; i < len(messages); {
+		possible = possible[:0:len(renderers)]
+		for _, r := range renderers {
+			if i + r.lines() <= len(messages) {
+				if r.satisfies(messages[i:i+r.lines()]) != 0 {
+					possible = append(possible, r)
+				}
+			}
+		}
+		if len(possible) == 0 {
+			return nil, fmt.Errorf("Can't make a plan.")
+		}
+		chosen := possible[rand.Intn(len(possible))]
+		i += chosen.lines()
+		plan = append(plan, chosen)
+	}
+
+	if len(plan) == 0 {
+		return nil, fmt.Errorf("Too much text for such a small comic.")
 	}
 
 	cellWidth := 200
@@ -503,6 +495,18 @@ func (comic *ComicGen) MakeComic(script *Script) (img image.Image, err error) {
 				planWidth--
 			}
 		}
+	} else {
+		switch len(plan) {
+		case 1:
+		case 2:
+		case 3:
+			planWidth = len(plan)
+		default:
+			planWidth = 4
+			if len(plan)%2 == 1 || (len(plan))%3 == 0 {
+				planWidth--
+			}
+		}	
 	}
 	planHeight := int(math.Ceil(float64(planLength) / float64(planWidth)))
 
