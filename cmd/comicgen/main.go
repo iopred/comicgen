@@ -19,12 +19,10 @@ func main() {
 	i, e := c.MakeComic(&comicgen.Script{
 		Messages: []*comicgen.Message{
 			{
-				Speaker: 0,
 				Text:    "Hello World!",
 				Author:  "iopred",
 			},
 			{
-				Speaker: 1,
 				Text:    "This is some text replacement that will wrap.",
 				Author:  "iopred",
 				Replacements: map[string]string{
@@ -32,16 +30,13 @@ func main() {
 				},
 			},
 			{
-				Speaker: 2,
 				Text:    "💯 🌝",
 				Author:  "iopred",
 			},
 			{
-				Speaker: 3,
 				Text:    "SHUT YOUR MOUTH\nBlah\n\nBlah\n",
 			},
 			{
-				Speaker: 4,
 				Text:    "This replacement ass is a story all about how my life got flip-turned upside down and I liked to take a minute and sit right there and tell you how I became the prince of a town called Bel Air. Dooot DoootDooot Dooot DoootDooot DoootDooot Dooot Dooot Dooot Dooot DoootDoootDooot.",
 				Author:  "iopredaoeuaeuuaoeuaoeuaoeuaoeuaoeuaoeuaoeuoeuoeuouoeu",
 				Replacements: map[string]string{
@@ -50,35 +45,31 @@ func main() {
 				},
 			},
 			{
-				Speaker: 5,
 				Text:    "SHUT YOUR MOUTH!!!",
 				Author:  "iopred",
 			},
 			{
-				Speaker: 6,
 				Text:    ":(",
 				Author:  "iopred aoeuaeu4 234234",
 			},
 			{
-				Speaker: -1,
 				Text:    "Hello",
 				Author:  "iopred",
 			},
 			{
-				Speaker: -1,
 				Text:    "Bye",
 				Author:  "iopred",
 			},
 		},
 		Author: "iopred",
-		Avatars: map[int]string{
-			0: "https://avatars0.githubusercontent.com/u/1529218?v=3&s=460",
+		Avatars: map[string]string{
+			"iopred": "https://avatars0.githubusercontent.com/u/1529218?v=3&s=460",
 		},
-		Type: comicgen.ComicTypeSimple,
+		Type: comicgen.ComicTypeTragedy,
 		Room: "#butts",
 	})
 	if e != nil {
-		fmt.Println("Error %s", e)
+		fmt.Printf("Error %s\n", e.Error())
 		return
 	}
 
