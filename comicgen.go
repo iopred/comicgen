@@ -15,6 +15,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -148,7 +149,7 @@ type Character struct {
 // GetFrame will return a frame for a message. It will parse any emotion from the message and randomly select a matching frame for those emotions.
 func (c *Character) GetFrame(message string) int {
 	possible := []Emotion{}
-	messageLower = strings.ToLower(message)
+	messageLower := strings.ToLower(message)
 	for e, p := range emotionTriggers {
 		for _, s := range p {
 			if strings.Index(messageLower, s) != -1 {
@@ -486,6 +487,15 @@ func init() {
 	}
 	cast.AddCharacterSet(defaultCharacterSet)
 	cast.LoadFromDirectory("characters")
+}
+
+func CharacterNames() string {
+	characters := []string{}
+	for _, c := range defaultCharacterSet.Characters {
+		characters = append(characters, c.Name)
+	}
+	sort.Strings(characters)
+	return strings.Join(characters, ", ")
 }
 
 func loadEmotions(path string) (e map[Emotion][]int) {
