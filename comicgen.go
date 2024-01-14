@@ -30,6 +30,7 @@ import (
 	"golang.org/x/image/font"
 	"golang.org/x/image/math/f64"
 	"golang.org/x/image/math/fixed"
+	"golang.org/x/exp/slices"
 )
 
 // MultiBounds is a struct containing bounds information for multiple lines of text.
@@ -277,6 +278,14 @@ func (cs *CharacterSet) GetRandomCharacters() []*Character {
 	}
 	rand.Shuffle(len(a), func(i, j int) { a[i], a[j] = a[j], a[i] })
 	return a
+}
+
+func (cs *CharacterSet) GetMap() map[string]*Character {
+	m := make(map[string]*Character)
+	for _, c := range cs.Characters {
+		m[c.Name] = c
+	}
+	return m
 }
 
 type Cast struct {
@@ -757,10 +766,29 @@ func (comic *ComicGen) loadImages(script *Script) error {
 	}
 
 	if script.Type == ComicTypeChat {
-		randomCharacters := cast.GetCharacterSetByName("Comic Chat").GetRandomCharacters()
+		cs := cast.GetCharacterSetByName("Comic Chat")
+		randomCharacters := cs.GetRandomCharacters()
 		if countAuthors(script.Messages) > len(randomCharacters) {
 			return errors.New("too many speakers for characters")
 		}
+
+		// Try to assign characters by name where possible.
+		cm := cs.GetMap()
+		for _, m := range script.Messages {
+			if cm[m.Author] != nil && comic.characters[m.Author] == nil {
+				comic.characters[m.Author] = cm[m.Author]
+
+				// Now we need to remove it from the random characters array.
+				for i := 0; i < len(randomCharacters); i++ {
+					if randomCharacters[i].Name == m.Author {
+						slices.Delete(randomCharacters, i, i)
+						break
+					}
+				}
+			}
+
+		}
+
 		for _, m := range script.Messages {
 			if m.Author == "" {
 				c := randomCharacters[0]

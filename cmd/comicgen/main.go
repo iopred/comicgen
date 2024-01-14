@@ -50,7 +50,7 @@ func main() {
 			},
 			{
 				Text:    ":(",
-				Author:  "iopred aoeuaeu4 234234",
+				Author:  "Jordy",
 			},
 			{
 				Text:    "Hello",
@@ -60,12 +60,16 @@ func main() {
 				Text:    "Bye",
 				Author:  "iopred",
 			},
+			{
+				Text:    "Bye",
+				Author:  "Maynard",
+			},
 		},
 		Author: "iopred",
 		Avatars: map[string]string{
 			"iopred": "https://avatars0.githubusercontent.com/u/1529218?v=3&s=460",
 		},
-		Type: comicgen.ComicTypeTragedy,
+		Type: comicgen.ComicTypeChat,
 		Room: "#butts",
 	})
 	if e != nil {
